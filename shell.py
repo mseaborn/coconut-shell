@@ -1,6 +1,7 @@
 
 import subprocess
 import traceback
+import string
 import sys
 
 import pyparsing as parse
@@ -9,9 +10,14 @@ import pyparsing as parse
 # TODO: doesn't handle backslash right
 quoted = parse.QuotedString(quoteChar='"', escChar='\\', multiline=True)
 
-argument = parse.Word(parse.srange("[a-zA-Z0-9_]")) | quoted
+special_chars = "\"'"
+bare_chars = "".join(sorted(set(parse.srange("[a-zA-Z0-9]") +
+                                string.punctuation)
+                            - set(special_chars)))
 
-command = argument + parse.ZeroOrMore(argument)
+argument = parse.Word(bare_chars) | quoted
+
+command = argument + parse.ZeroOrMore(argument) + parse.StringEnd()
 
 
 def run_command(line, stdout):
