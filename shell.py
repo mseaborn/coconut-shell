@@ -1,8 +1,11 @@
 
+import glob
+import os
+import readline
 import subprocess
-import traceback
 import string
 import sys
+import traceback
 
 import pyparsing as parse
 
@@ -25,7 +28,41 @@ def run_command(line, stdout):
     subprocess.call(cmd, stdout=stdout)
 
 
+def readline_complete(string):
+    for filename in sorted(glob.glob(string + "*")):
+        if os.path.isdir(filename):
+            # This treats symlinks to directories differently from Bash,
+            # but this might be considered an improvement.
+            yield filename + "/"
+        else:
+            yield filename
+
+
+def readline_complete_wrapper(string, index):
+    try:
+        # readline has a weird interface to the completer.  We end up
+        # recomputing the matches for each match, so it can take
+        # O(n^2) time overall.  We could cache but it's not worth the
+        # bother.
+        matches = list(readline_complete(string))
+        if index < len(matches):
+            return matches[index]
+        else:
+            return None
+    except:
+        # The readline wrapper swallows any exception so we need to
+        # print it if it is to be reported.
+        traceback.print_exc()
+
+
+def init_readline():
+    readline.parse_and_bind("tab: complete")
+    readline.set_completer(readline_complete_wrapper)
+    readline.set_completer_delims(string.whitespace)
+
+
 def main():
+    init_readline()
     while True:
         prompt = "$ "
         try:

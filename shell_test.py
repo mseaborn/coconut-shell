@@ -6,6 +6,7 @@ import unittest
 import pyparsing as parse
 
 import shell
+import tempdir_test
 
 
 def make_fh_pair():
@@ -20,7 +21,7 @@ def make_fh_pair():
     return write_fh, read_fh
 
 
-class ShellTests(unittest.TestCase):
+class ShellTests(tempdir_test.TempDirTestCase):
 
     def test_simple(self):
         write_fh, read_fh = make_fh_pair()
@@ -39,6 +40,16 @@ class ShellTests(unittest.TestCase):
         self.assertRaises(
             parse.ParseException,
             lambda: shell.run_command('echo \000', stdout=write_fh))
+
+    def test_completion(self):
+        temp_dir = self.make_temp_dir()
+        os.mkdir(os.path.join(temp_dir, "a-dir"))
+        os.mkdir(os.path.join(temp_dir, "b-dir"))
+        fh = open(os.path.join(temp_dir, "a-file"), "w")
+        fh.close()
+        os.chdir(temp_dir)
+        self.assertEquals(list(shell.readline_complete("a-")),
+                          ["a-dir/", "a-file"])
 
 
 if __name__ == "__main__":
