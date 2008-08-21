@@ -100,6 +100,19 @@ class ShellTests(tempdir_test.TempDirTestCase):
         data = self.command_output("echo *.txt")
         self.assertEquals(data, "*.txt\n")
 
+    def test_chdir(self):
+        temp_dir = self.make_temp_dir()
+        output = self.command_output("cd / %s" % temp_dir)
+        self.assertEquals(output, "")
+        self.assertEquals(os.getcwd(), os.path.realpath(temp_dir))
+
+    def test_chdir_home_dir(self):
+        # Assumes that $HOME exists.
+        os.chdir(self.make_temp_dir())
+        output = self.command_output("cd")
+        self.assertEquals(output, "")
+        self.assertEquals(os.getcwd(), os.path.realpath(os.environ["HOME"]))
+
     def test_completion(self):
         temp_dir = self.make_temp_dir()
         os.mkdir(os.path.join(temp_dir, "a-dir"))

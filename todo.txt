@@ -6,14 +6,15 @@
 - job control
 - signal safe (don't die on ctrl-c)
 - prompts
-- cd
 - ~ expansion
 - {a,b} expansion, a kind of globbing
 - report non-zero status codes
 - within-argument quotes, e.g. --foo="bar"
 - $-variable expansion (do we want this?)
+- symlink-aware cwd with "cd .."
 
 Done:
 - pipelines
 - filename completion
 - globbing
+- cd

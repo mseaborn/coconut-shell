@@ -78,10 +78,20 @@ class CommandExp(object):
         evaled_args = []
         for arg in self._args:
             evaled_args.extend(arg.eval())
-        proc = subprocess.Popen(
-            evaled_args, stdin=stdin, stdout=stdout,
-            stderr=stderr, close_fds=True, preexec_fn=set_up_signals)
-        return [proc]
+        if evaled_args[0] == "cd":
+            chdir_args = evaled_args[1:]
+            if len(chdir_args) == 0:
+                # TODO: report nicer error when HOME is not set
+                os.chdir(os.environ["HOME"])
+            else:
+                for arg in chdir_args:
+                    os.chdir(arg)
+            return []
+        else:
+            proc = subprocess.Popen(
+                evaled_args, stdin=stdin, stdout=stdout,
+                stderr=stderr, close_fds=True, preexec_fn=set_up_signals)
+            return [proc]
 
 
 class PipelineExp(object):
