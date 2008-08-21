@@ -1,14 +1,19 @@
 
 - nicer errors (from parser and for "command not found")
-- pipelines
 - fd redirection
 - save history
-- filename completion
 - backgrounding
 - job control
 - signal safe (don't die on ctrl-c)
 - prompts
 - cd
 - ~ expansion
-- globbing
+- {a,b} expansion, a kind of globbing
 - report non-zero status codes
+- within-argument quotes, e.g. --foo="bar"
+- $-variable expansion (do we want this?)
+
+Done:
+- pipelines
+- filename completion
+- globbing

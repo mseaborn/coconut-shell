@@ -38,6 +38,14 @@ def make_fh_pair():
     return write_fh, read_fh
 
 
+def write_file(filename, data):
+    fh = open(filename, "w")
+    try:
+        fh.write(data)
+    finally:
+        fh.close()
+
+
 class ShellTests(tempdir_test.TempDirTestCase):
 
     def command_output(self, command):
@@ -74,12 +82,29 @@ class ShellTests(tempdir_test.TempDirTestCase):
         self.assertRaises(parse.ParseException,
                           lambda: self.command_output('echo \000'))
 
+    def test_globbing(self):
+        temp_dir = self.make_temp_dir()
+        write_file(os.path.join(temp_dir, "aaa"), "")
+        write_file(os.path.join(temp_dir, "aab"), "")
+        write_file(os.path.join(temp_dir, "bbb"), "")
+        os.chdir(temp_dir)
+        data = self.command_output("echo a*")
+        self.assertEquals(data, "aaa aab\n")
+
+    def test_globbing_no_match(self):
+        os.chdir(self.make_temp_dir())
+        # Glob expressions that match nothing return the glob
+        # expression, as is the default in Bash.  This is more useful
+        # in interactive mode than returning nothing (which is more
+        # useful in programs).
+        data = self.command_output("echo *.txt")
+        self.assertEquals(data, "*.txt\n")
+
     def test_completion(self):
         temp_dir = self.make_temp_dir()
         os.mkdir(os.path.join(temp_dir, "a-dir"))
         os.mkdir(os.path.join(temp_dir, "b-dir"))
-        fh = open(os.path.join(temp_dir, "a-file"), "w")
-        fh.close()
+        write_file(os.path.join(temp_dir, "a-file"), "")
         os.chdir(temp_dir)
         self.assertEquals(list(shell.readline_complete("a-")),
                           ["a-dir/", "a-file"])

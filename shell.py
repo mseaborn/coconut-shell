@@ -37,14 +37,49 @@ def set_up_signals():
     signal.signal(signal.SIGPIPE, signal.SIG_DFL)
 
 
+class StringArgument(object):
+
+    def __init__(self, string):
+        self._string = string
+
+    def eval(self):
+        return [self._string]
+
+
+class GlobArgument(object):
+
+    def __init__(self, string):
+        self._string = string
+
+    def eval(self):
+        matches = glob.glob(self._string)
+        if len(matches) > 0:
+            return matches
+        else:
+            return [self._string]
+
+
+def make_bare_argument(string):
+    # TODO: should check for "[" and "]" as well
+    if "*" in string or "?" in string:
+        return GlobArgument(string)
+    else:
+        # This is an optimisation.  This is not a glob expression so
+        # checking the filesystem would be pointless.
+        return StringArgument(string)
+
+
 class CommandExp(object):
 
     def __init__(self, args):
         self._args = args
 
     def run(self, stdin, stdout, stderr):
+        evaled_args = []
+        for arg in self._args:
+            evaled_args.extend(arg.eval())
         proc = subprocess.Popen(
-            self._args, stdin=stdin, stdout=stdout,
+            evaled_args, stdin=stdin, stdout=stdout,
             stderr=stderr, close_fds=True, preexec_fn=set_up_signals)
         return [proc]
 
@@ -70,13 +105,17 @@ class PipelineExp(object):
 # TODO: doesn't handle backslash right
 double_quoted = parse.QuotedString(quoteChar='"', escChar='\\', multiline=True)
 single_quoted = parse.QuotedString(quoteChar="'", escChar='\\', multiline=True)
+quoted_argument = (double_quoted | single_quoted) \
+    .setParseAction(lambda text, loc, arg: StringArgument(get_one(arg)))
 
 special_chars = "|\"'"
 bare_chars = "".join(sorted(set(parse.srange("[a-zA-Z0-9]") +
                                 string.punctuation)
                             - set(special_chars)))
+bare_argument = parse.Word(bare_chars) \
+    .setParseAction(lambda text, loc, arg: make_bare_argument(get_one(arg)))
 
-argument = parse.Word(bare_chars) | double_quoted | single_quoted
+argument = bare_argument | quoted_argument
 
 command = (argument + parse.ZeroOrMore(argument)) \
           .setParseAction(lambda text, loc, args: CommandExp(args))
