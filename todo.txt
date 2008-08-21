@@ -1,0 +1,14 @@
+
+- nicer errors (from parser and for "command not found")
+- pipelines
+- fd redirection
+- save history
+- filename completion
+- backgrounding
+- job control
+- signal safe (don't die on ctrl-c)
+- prompts
+- cd
+- ~ expansion
+- globbing
+- report non-zero status codes
