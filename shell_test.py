@@ -21,39 +21,41 @@ def make_fh_pair():
     return write_fh, read_fh
 
 
-def command_output(command):
-    write_fh, read_fh = make_fh_pair()
-    shell.run_command(command, stdin=open(os.devnull, "r"), stdout=write_fh)
-    return read_fh.read()
-
-
 class ShellTests(tempdir_test.TempDirTestCase):
 
+    def command_output(self, command):
+        write_stdout, read_stdout = make_fh_pair()
+        write_stderr, read_stderr = make_fh_pair()
+        shell.run_command(command, stdin=open(os.devnull, "r"),
+                          stdout=write_stdout, stderr=write_stderr)
+        self.assertEquals(read_stderr.read(), "")
+        return read_stdout.read()
+
     def test_simple(self):
-        data = command_output('echo foo "bar baz"')
+        data = self.command_output('echo foo "bar baz"')
         self.assertEquals(data, "foo bar baz\n")
 
     def test_quoting(self):
-        data = command_output("echo foo  'bar  baz' ''")
+        data = self.command_output("echo foo  'bar  baz' ''")
         self.assertEquals(data, "foo bar  baz \n")
 
     def test_punctuation(self):
-        data = command_output('echo . +')
+        data = self.command_output('echo . +')
         self.assertEquals(data, ". +\n")
 
     def test_pipeline(self):
-        data = command_output(
+        data = self.command_output(
             "echo foo | sh -c 'echo open && cat && echo close'")
         self.assertEquals(data, "open\nfoo\nclose\n")
 
     def test_breaking_pipe(self):
         # "yes" should exit because its pipe is broken.
-        data = command_output("yes | echo done")
+        data = self.command_output("yes | echo done")
         self.assertEquals(data, "done\n")
 
     def test_syntax_error(self):
         self.assertRaises(parse.ParseException,
-                          lambda: command_output('echo \000'))
+                          lambda: self.command_output('echo \000'))
 
     def test_completion(self):
         temp_dir = self.make_temp_dir()

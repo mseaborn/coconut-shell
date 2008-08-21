@@ -3,6 +3,7 @@
 import glob
 import os
 import readline
+import signal
 import subprocess
 import string
 import sys
@@ -11,14 +12,24 @@ import traceback
 import pyparsing as parse
 
 
+def set_up_signals():
+    # Python changes signal handler settings on startup, including
+    # setting SIGPIPE to SIG_IGN (ignore), which gets inherited by
+    # child processes.  I am surprised this does not cause problems
+    # more often.  Change the setting back.
+    signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+
+
 class CommandExp(object):
 
     def __init__(self, args):
         self._args = args
 
-    def run(self, stdin, stdout):
-        return [subprocess.Popen(self._args, stdin=stdin, stdout=stdout,
-                                 close_fds=True)]
+    def run(self, stdin, stdout, stderr):
+        proc = subprocess.Popen(
+            self._args, stdin=stdin, stdout=stdout,
+            stderr=stderr, close_fds=True, preexec_fn=set_up_signals)
+        return [proc]
 
 
 class PipelineExp(object):
@@ -27,13 +38,15 @@ class PipelineExp(object):
         self._cmd1 = cmd1
         self._cmd2 = cmd2
 
-    def run(self, stdin, stdout):
+    def run(self, stdin, stdout, stderr):
         pipe_read_fd, pipe_write_fd = os.pipe()
         pipe_read = os.fdopen(pipe_read_fd, "r")
         pipe_write = os.fdopen(pipe_write_fd, "w")
         procs = []
-        procs.extend(self._cmd1.run(stdin=stdin, stdout=pipe_write))
-        procs.extend(self._cmd2.run(stdin=pipe_read, stdout=stdout))
+        procs.extend(self._cmd1.run(stdin=stdin, stdout=pipe_write,
+                                    stderr=stderr))
+        procs.extend(self._cmd2.run(stdin=pipe_read, stdout=stdout,
+                                    stderr=stderr))
         return procs
 
 
@@ -60,10 +73,10 @@ def get_one(lst):
     return lst[0]
 
 
-def run_command(line, stdin, stdout):
+def run_command(line, stdin, stdout, stderr):
     top_expr = pipeline + parse.StringEnd()
     cmd = get_one(top_expr.parseString(line))
-    procs = cmd.run(stdin, stdout)
+    procs = cmd.run(stdin, stdout, stderr)
     for proc in procs:
         proc.wait()
 
@@ -111,7 +124,8 @@ def main():
             sys.stdout.write("\n")
             break
         try:
-            run_command(line, stdin=sys.stdin, stdout=sys.stdout)
+            run_command(line, stdin=sys.stdin, stdout=sys.stdout,
+                        stderr=sys.stderr)
         except Exception:
             traceback.print_exc()
 
