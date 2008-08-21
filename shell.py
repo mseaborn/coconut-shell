@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 
 import glob
 import os
@@ -10,22 +11,61 @@ import traceback
 import pyparsing as parse
 
 
-# TODO: doesn't handle backslash right
-quoted = parse.QuotedString(quoteChar='"', escChar='\\', multiline=True)
+class CommandExp(object):
 
-special_chars = "\"'"
+    def __init__(self, args):
+        self._args = args
+
+    def run(self, stdin, stdout):
+        return [subprocess.Popen(self._args, stdin=stdin, stdout=stdout,
+                                 close_fds=True)]
+
+
+class PipelineExp(object):
+
+    def __init__(self, cmd1, cmd2):
+        self._cmd1 = cmd1
+        self._cmd2 = cmd2
+
+    def run(self, stdin, stdout):
+        pipe_read_fd, pipe_write_fd = os.pipe()
+        pipe_read = os.fdopen(pipe_read_fd, "r")
+        pipe_write = os.fdopen(pipe_write_fd, "w")
+        procs = []
+        procs.extend(self._cmd1.run(stdin=stdin, stdout=pipe_write))
+        procs.extend(self._cmd2.run(stdin=pipe_read, stdout=stdout))
+        return procs
+
+
+# TODO: doesn't handle backslash right
+double_quoted = parse.QuotedString(quoteChar='"', escChar='\\', multiline=True)
+single_quoted = parse.QuotedString(quoteChar="'", escChar='\\', multiline=True)
+
+special_chars = "|\"'"
 bare_chars = "".join(sorted(set(parse.srange("[a-zA-Z0-9]") +
                                 string.punctuation)
                             - set(special_chars)))
 
-argument = parse.Word(bare_chars) | quoted
+argument = parse.Word(bare_chars) | double_quoted | single_quoted
 
-command = argument + parse.ZeroOrMore(argument) + parse.StringEnd()
+command = (argument + parse.ZeroOrMore(argument)) \
+          .setParseAction(lambda text, loc, args: CommandExp(args))
+
+pipeline = parse.delimitedList(command, delim='|') \
+           .setParseAction(lambda text, loc, cmds: reduce(PipelineExp, cmds))
 
 
-def run_command(line, stdout):
-    cmd = command.parseString(line)
-    subprocess.call(cmd, stdout=stdout)
+def get_one(lst):
+    assert len(lst) == 1, lst
+    return lst[0]
+
+
+def run_command(line, stdin, stdout):
+    top_expr = pipeline + parse.StringEnd()
+    cmd = get_one(top_expr.parseString(line))
+    procs = cmd.run(stdin, stdout)
+    for proc in procs:
+        proc.wait()
 
 
 def readline_complete(string):
@@ -71,7 +111,7 @@ def main():
             sys.stdout.write("\n")
             break
         try:
-            run_command(line, stdout=sys.stdout)
+            run_command(line, stdin=sys.stdin, stdout=sys.stdout)
         except Exception:
             traceback.print_exc()
 
