@@ -46,7 +46,19 @@ def write_file(filename, data):
         fh.close()
 
 
+def set_env_var(key, value):
+    if value is None:
+        del os.environ[key]
+    else:
+        os.environ[key] = value
+
+
 class ShellTests(tempdir_test.TempDirTestCase):
+
+    def patch_env_var(self, key, value):
+        old_value = os.environ.get(key)
+        set_env_var(key, value)
+        self.on_teardown(lambda: set_env_var(key, old_value))
 
     def command_output(self, command):
         write_stdout, read_stdout = make_fh_pair()
@@ -107,11 +119,23 @@ class ShellTests(tempdir_test.TempDirTestCase):
         self.assertEquals(os.getcwd(), os.path.realpath(temp_dir))
 
     def test_chdir_home_dir(self):
-        # Assumes that $HOME exists.
+        home_dir = self.make_temp_dir()
+        self.patch_env_var("HOME", home_dir)
         os.chdir(self.make_temp_dir())
         output = self.command_output("cd")
         self.assertEquals(output, "")
-        self.assertEquals(os.getcwd(), os.path.realpath(os.environ["HOME"]))
+        self.assertEquals(os.getcwd(), os.path.realpath(home_dir))
+
+    def test_tilde_expansion(self):
+        home_dir = "/my/home/town"
+        self.patch_env_var("HOME", home_dir)
+        output = self.command_output("echo ~")
+        self.assertEquals(output, home_dir + "\n")
+        output = self.command_output("echo ~/foo")
+        self.assertEquals(output, home_dir + "/foo\n")
+        # If HOME is unset, os.path.expanduser() looks at /etc/passwd,
+        # but that is inconsistent with the fallback for "cd", which
+        # is to give an error.
 
     def test_completion(self):
         temp_dir = self.make_temp_dir()

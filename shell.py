@@ -46,27 +46,22 @@ class StringArgument(object):
         return [self._string]
 
 
-class GlobArgument(object):
+class ExpandStringArgument(object):
 
     def __init__(self, string):
         self._string = string
+        # TODO: should check for "[" and "]" as well
+        # This is an optimisation.  If this is not a glob expression,
+        # checking the filesystem would be pointless.
+        self._do_glob = "*" in string or "?" in string
 
     def eval(self):
-        matches = sorted(glob.glob(self._string))
-        if len(matches) > 0:
-            return matches
-        else:
-            return [self._string]
-
-
-def make_bare_argument(string):
-    # TODO: should check for "[" and "]" as well
-    if "*" in string or "?" in string:
-        return GlobArgument(string)
-    else:
-        # This is an optimisation.  This is not a glob expression so
-        # checking the filesystem would be pointless.
-        return StringArgument(string)
+        string = os.path.expanduser(self._string)
+        if self._do_glob:
+            matches = sorted(glob.glob(string))
+            if len(matches) > 0:
+                return matches
+        return [string]
 
 
 class CommandExp(object):
@@ -123,7 +118,7 @@ bare_chars = "".join(sorted(set(parse.srange("[a-zA-Z0-9]") +
                                 string.punctuation)
                             - set(special_chars)))
 bare_argument = parse.Word(bare_chars) \
-    .setParseAction(lambda text, loc, arg: make_bare_argument(get_one(arg)))
+    .setParseAction(lambda text, loc, arg: ExpandStringArgument(get_one(arg)))
 
 argument = bare_argument | quoted_argument
 

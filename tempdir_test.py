@@ -43,10 +43,15 @@ class TempDirTestCase(unittest.TestCase):
     def setUp(self):
         super(TempDirTestCase, self).setUp()
         self._temp_maker = TempDirMaker("tmp-%s" % self.__class__.__name__)
+        self._on_teardown = [self._temp_maker.tidy_up]
 
     def tearDown(self):
         super(TempDirTestCase, self).tearDown()
-        self._temp_maker.tidy_up()
+        for func in self._on_teardown:
+            func()
 
     def make_temp_dir(self):
         return self._temp_maker.make_temp_dir()
+
+    def on_teardown(self, func):
+        self._on_teardown.append(func)
