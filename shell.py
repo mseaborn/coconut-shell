@@ -52,7 +52,7 @@ class GlobArgument(object):
         self._string = string
 
     def eval(self):
-        matches = glob.glob(self._string)
+        matches = sorted(glob.glob(self._string))
         if len(matches) > 0:
             return matches
         else:
