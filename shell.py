@@ -19,6 +19,7 @@
 
 import glob
 import os
+import pwd
 import readline
 import signal
 import subprocess
@@ -144,14 +145,47 @@ def run_command(line, stdin, stdout, stderr):
             proc.wait()
 
 
+def path_starts_with(path1, path2):
+    return path1 == path2 or path1.startswith(path2 + "/")
+
+
+# Based on posixpath.expanduser().  In addition, it returns a function
+# to reverse the expansion.
+def expanduser(path):
+    if not path.startswith('~'):
+        return path, lambda x: x
+    i = path.find('/', 1)
+    if i < 0:
+        i = len(path)
+    if i == 1:
+        if 'HOME' not in os.environ:
+            userhome = pwd.getpwuid(os.getuid()).pw_dir
+        else:
+            userhome = os.environ['HOME']
+    else:
+        try:
+            pwent = pwd.getpwnam(path[1:i])
+        except KeyError:
+            return path, lambda x: x
+        userhome = pwent.pw_dir
+    userhome = userhome.rstrip('/')
+    def reverse(path2):
+        if path_starts_with(path2, userhome):
+            return path[:i] + path2[len(userhome):]
+        else:
+            return path2
+    return userhome + path[i:], reverse
+
+
 def readline_complete(string):
-    for filename in sorted(glob.glob(string + "*")):
+    filename, reverse_expansion = expanduser(string)
+    for filename in sorted(glob.glob(filename + "*")):
         if os.path.isdir(filename):
             # This treats symlinks to directories differently from Bash,
             # but this might be considered an improvement.
-            yield filename + "/"
+            yield reverse_expansion(filename) + "/"
         else:
-            yield filename
+            yield reverse_expansion(filename)
 
 
 def readline_complete_wrapper(string, index):

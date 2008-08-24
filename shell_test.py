@@ -150,6 +150,16 @@ class ShellTests(tempdir_test.TempDirTestCase):
         self.assertEquals(list(shell.readline_complete("a-")),
                           ["a-dir/", "a-file"])
 
+    def test_completion_with_tilde_expansion(self):
+        home_dir = self.make_temp_dir()
+        self.patch_env_var("HOME", home_dir)
+        os.mkdir(os.path.join(home_dir, "a-dir"))
+        os.mkdir(os.path.join(home_dir, "b-dir"))
+        # Recent versions of Bash expand out ~ when doing completion,
+        # but we leave the ~ in place, which I prefer.
+        self.assertEquals(list(shell.readline_complete("~/a-")),
+                          ["~/a-dir/"])
+
 
 if __name__ == "__main__":
     unittest.main()
