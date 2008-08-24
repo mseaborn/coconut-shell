@@ -128,6 +128,8 @@ command = (argument + parse.ZeroOrMore(argument)) \
 pipeline = parse.delimitedList(command, delim='|') \
            .setParseAction(lambda text, loc, cmds: reduce(PipelineExp, cmds))
 
+top_command = parse.Optional(pipeline)
+
 
 def get_one(lst):
     assert len(lst) == 1, lst
@@ -135,11 +137,11 @@ def get_one(lst):
 
 
 def run_command(line, stdin, stdout, stderr):
-    top_expr = pipeline + parse.StringEnd()
-    cmd = get_one(top_expr.parseString(line))
-    procs = cmd.run(stdin, stdout, stderr)
-    for proc in procs:
-        proc.wait()
+    top_expr = top_command + parse.StringEnd()
+    for cmd in top_expr.parseString(line):
+        procs = cmd.run(stdin, stdout, stderr)
+        for proc in procs:
+            proc.wait()
 
 
 def readline_complete(string):

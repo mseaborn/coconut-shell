@@ -85,6 +85,10 @@ class ShellTests(tempdir_test.TempDirTestCase):
             "echo foo | sh -c 'echo open && cat && echo close'")
         self.assertEquals(data, "open\nfoo\nclose\n")
 
+    def test_empty_command(self):
+        data = self.command_output("")
+        self.assertEquals(data, "")
+
     def test_breaking_pipe(self):
         # "yes" should exit because its pipe is broken.
         data = self.command_output("yes | echo done")
