@@ -17,11 +17,14 @@
 # 02110-1301 USA.
 
 import os
+import signal
+import sys
 import tempfile
 import unittest
 
 import pyparsing as parse
 
+import jobcontrol
 import shell
 import tempdir_test
 
@@ -53,6 +56,12 @@ def set_env_var(key, value):
         os.environ[key] = value
 
 
+def pop_all(a_list):
+    copy = a_list[:]
+    a_list[:] = []
+    return copy
+
+
 class ShellTests(tempdir_test.TempDirTestCase):
 
     def patch_env_var(self, key, value):
@@ -63,7 +72,8 @@ class ShellTests(tempdir_test.TempDirTestCase):
     def command_output(self, command):
         write_stdout, read_stdout = make_fh_pair()
         write_stderr, read_stderr = make_fh_pair()
-        shell.run_command(command, stdin=open(os.devnull, "r"),
+        job_controller = shell.NullJobController()
+        shell.run_command(job_controller, command, stdin=open(os.devnull, "r"),
                           stdout=write_stdout, stderr=write_stderr)
         self.assertEquals(read_stderr.read(), "")
         return read_stdout.read()
@@ -159,6 +169,86 @@ class ShellTests(tempdir_test.TempDirTestCase):
         # but we leave the ~ in place, which I prefer.
         self.assertEquals(list(shell.readline_complete("~/a-")),
                           ["~/a-dir/"])
+
+
+class JobControlTests(unittest.TestCase):
+
+    def setUp(self):
+        messages = []
+        class Output(object):
+            def write(self, message):
+                messages.append(message)
+
+        def assert_messages(expected):
+            self.job_controller.print_messages()
+            self.assertEquals(pop_all(messages), expected)
+
+        self.dispatcher = jobcontrol.WaitDispatcher()
+        self.job_controller = jobcontrol.JobController(
+            self.dispatcher, Output())
+        self.assert_messages = assert_messages
+
+    def test_foreground(self):
+        # Foregrounding is necessary to set signals otherwise we get
+        # wedged by SIGTTOU.  TODO: tests should not be vulnerable to
+        # this and should not assume they are run with a tty.
+        self.job_controller.shell_to_foreground()
+        shell.run_command(
+            self.job_controller, "true",
+            stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr)
+        self.job_controller.shell_to_foreground()
+        self.assertEquals(self.job_controller.jobs.keys(), [])
+        self.assert_messages([])
+
+    def test_foreground_job_is_stopped(self):
+        self.job_controller.shell_to_foreground()
+        shell.run_command(
+            self.job_controller, "sh -c 'kill -STOP $$'",
+            stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr)
+        self.job_controller.shell_to_foreground()
+        jobs = self.job_controller.jobs
+        self.assertEquals(jobs.keys(), [1])
+        job = jobs[1]
+        try:
+            self.assert_messages(["[1]+ Stopped\n"])
+        finally:
+            job.resume()
+        self.dispatcher.once(may_block=True)
+        self.assertEquals(job.state, "finished")
+        self.assert_messages(["[1]+ Done\n"])
+        self.assertEquals(jobs.keys(), [])
+
+    def test_backgrounding(self):
+        jobs = self.job_controller.jobs
+        shell.run_command(
+            self.job_controller,
+            "sh -c 'while true; do sleep 1s; done' &",
+            stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr)
+        self.assertEquals(jobs.keys(), [1])
+        job = jobs[1]
+        try:
+            self.assertEquals(job.state, "running")
+            self.assert_messages(["[1] %i\n" % job.pgid])
+            job.send_signal(signal.SIGSTOP)
+            # Signal delivery is apparently not immediate so we need to block.
+            self.dispatcher.once(may_block=True)
+            self.assertEquals(job.state, "stopped")
+            self.assert_messages(["[1]+ Stopped\n"])
+
+            # Check that the wait status handlers work a second time.
+            job.resume()
+            self.assertEquals(job.state, "running")
+            self.assert_messages([])
+            job.send_signal(signal.SIGSTOP)
+            self.dispatcher.once(may_block=True)
+            self.assertEquals(job.state, "stopped")
+            self.assert_messages(["[1]+ Stopped\n"])
+        finally:
+            job.send_signal(signal.SIGKILL)
+        self.dispatcher.once(may_block=True)
+        self.assertEquals(job.state, "finished")
+        self.assert_messages(["[1]+ Done\n"])
+        self.assertEquals(jobs.keys(), [])
 
 
 if __name__ == "__main__":

@@ -29,6 +29,8 @@ import traceback
 
 import pyparsing as parse
 
+import jobcontrol
+
 
 def set_up_signals():
     # Python changes signal handler settings on startup, including
@@ -70,7 +72,7 @@ class CommandExp(object):
     def __init__(self, args):
         self._args = args
 
-    def run(self, stdin, stdout, stderr):
+    def run(self, launcher, stdin, stdout, stderr):
         evaled_args = []
         for arg in self._args:
             evaled_args.extend(arg.eval())
@@ -84,7 +86,7 @@ class CommandExp(object):
                     os.chdir(arg)
             return []
         else:
-            proc = subprocess.Popen(
+            proc = launcher.spawn(
                 evaled_args, stdin=stdin, stdout=stdout,
                 stderr=stderr, close_fds=True, preexec_fn=set_up_signals)
             return [proc]
@@ -96,16 +98,28 @@ class PipelineExp(object):
         self._cmd1 = cmd1
         self._cmd2 = cmd2
 
-    def run(self, stdin, stdout, stderr):
+    def run(self, launcher, stdin, stdout, stderr):
         pipe_read_fd, pipe_write_fd = os.pipe()
         pipe_read = os.fdopen(pipe_read_fd, "r")
         pipe_write = os.fdopen(pipe_write_fd, "w")
         procs = []
-        procs.extend(self._cmd1.run(stdin=stdin, stdout=pipe_write,
+        procs.extend(self._cmd1.run(launcher, stdin=stdin, stdout=pipe_write,
                                     stderr=stderr))
-        procs.extend(self._cmd2.run(stdin=pipe_read, stdout=stdout,
+        procs.extend(self._cmd2.run(launcher, stdin=pipe_read, stdout=stdout,
                                     stderr=stderr))
         return procs
+
+
+class JobExp(object):
+
+    def __init__(self, cmd, is_foreground):
+        self._cmd = cmd
+        self._is_foreground = is_foreground
+
+    def run(self, job_controller, stdin, stdout, stderr):
+        launcher, add_job = job_controller.create_job(self._is_foreground)
+        procs = self._cmd.run(launcher, stdin, stdout, stderr)
+        add_job(procs)
 
 
 # TODO: doesn't handle backslash right
@@ -114,7 +128,7 @@ single_quoted = parse.QuotedString(quoteChar="'", escChar='\\', multiline=True)
 quoted_argument = (double_quoted | single_quoted) \
     .setParseAction(lambda text, loc, arg: StringArgument(get_one(arg)))
 
-special_chars = "|\"'"
+special_chars = "|&\"'"
 bare_chars = "".join(sorted(set(parse.srange("[a-zA-Z0-9]") +
                                 string.punctuation)
                             - set(special_chars)))
@@ -129,7 +143,29 @@ command = (argument + parse.ZeroOrMore(argument)) \
 pipeline = parse.delimitedList(command, delim='|') \
            .setParseAction(lambda text, loc, cmds: reduce(PipelineExp, cmds))
 
-top_command = parse.Optional(pipeline)
+job_expr = (pipeline +
+            parse.Optional(parse.Literal("&").
+                           setParseAction(lambda text, loc, cmds: False),
+                           True)) \
+           .setParseAction(lambda text, loc, args: JobExp(*args))
+
+top_command = parse.Optional(job_expr)
+
+
+class Launcher(object):
+
+    def spawn(self, args, **kwargs):
+        return subprocess.Popen(args, **kwargs)
+
+
+class NullJobController(object):
+
+    def create_job(self, is_foreground):
+        def add_job(procs):
+            if is_foreground:
+                for proc in procs:
+                    proc.wait()
+        return Launcher(), add_job
 
 
 def get_one(lst):
@@ -137,12 +173,10 @@ def get_one(lst):
     return lst[0]
 
 
-def run_command(line, stdin, stdout, stderr):
+def run_command(job_controller, line, stdin, stdout, stderr):
     top_expr = top_command + parse.StringEnd()
     for cmd in top_expr.parseString(line):
-        procs = cmd.run(stdin, stdout, stderr)
-        for proc in procs:
-            proc.wait()
+        procs = cmd.run(job_controller, stdin, stdout, stderr)
 
 
 def path_starts_with(path1, path2):
@@ -213,7 +247,11 @@ def init_readline():
 
 def main():
     init_readline()
+    job_controller = jobcontrol.JobController(jobcontrol.WaitDispatcher(),
+                                              sys.stdout)
     while True:
+        job_controller.shell_to_foreground()
+        job_controller.print_messages()
         prompt = "$ "
         try:
             line = raw_input(prompt)
@@ -221,8 +259,8 @@ def main():
             sys.stdout.write("\n")
             break
         try:
-            run_command(line, stdin=sys.stdin, stdout=sys.stdout,
-                        stderr=sys.stderr)
+            run_command(job_controller, line, stdin=sys.stdin,
+                        stdout=sys.stdout, stderr=sys.stderr)
         except Exception:
             traceback.print_exc()
 
