@@ -154,14 +154,22 @@ job_expr = (pipeline +
 top_command = parse.Optional(job_expr)
 
 
+class Popen(subprocess.Popen):
+
+    # subprocess usually does waitpid() for you by polling with
+    # WNOHANG, which can cause non-deterministic behaviour.  Override
+    # that, because we do waitpid() ourselves.
+    def poll(self, _deadstate=None):
+        pass
+
+
 class Launcher(object):
 
     def spawn(self, args, pgroup, **kwargs):
         def before_exec():
             set_up_signals()
             pgroup.init_process(os.getpid())
-        proc = subprocess.Popen(args, close_fds=True, preexec_fn=before_exec,
-                                **kwargs)
+        proc = Popen(args, close_fds=True, preexec_fn=before_exec, **kwargs)
         pgroup.init_process(proc.pid)
         return proc
 
