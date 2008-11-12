@@ -34,7 +34,7 @@ def make_fh_pair():
     # FD pair, but without a pipe buffer limit.
     fd, filename = tempfile.mkstemp(prefix="shell_test_")
     try:
-        write_fh = os.fdopen(fd, "w")
+        write_fh = os.fdopen(fd, "w", 0)
         read_fh = open(filename, "r")
     finally:
         os.unlink(filename)
@@ -73,7 +73,8 @@ class ShellTests(tempdir_test.TempDirTestCase):
         write_stdout, read_stdout = make_fh_pair()
         write_stderr, read_stderr = make_fh_pair()
         job_controller = shell.NullJobController()
-        shell.run_command(job_controller, command, stdin=open(os.devnull, "r"),
+        shell.run_command(job_controller, shell.Launcher(), command,
+                          stdin=open(os.devnull, "r"),
                           stdout=write_stdout, stderr=write_stderr)
         self.assertEquals(read_stderr.read(), "")
         return read_stdout.read()
@@ -194,7 +195,7 @@ class JobControlTests(unittest.TestCase):
         # this and should not assume they are run with a tty.
         self.job_controller.shell_to_foreground()
         shell.run_command(
-            self.job_controller, "true",
+            self.job_controller, shell.Launcher(), "true",
             stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr)
         self.job_controller.shell_to_foreground()
         self.assertEquals(self.job_controller.jobs.keys(), [])
@@ -203,7 +204,7 @@ class JobControlTests(unittest.TestCase):
     def test_foreground_job_is_stopped(self):
         self.job_controller.shell_to_foreground()
         shell.run_command(
-            self.job_controller, "sh -c 'kill -STOP $$'",
+            self.job_controller, shell.Launcher(), "sh -c 'kill -STOP $$'",
             stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr)
         self.job_controller.shell_to_foreground()
         jobs = self.job_controller.jobs
@@ -221,7 +222,7 @@ class JobControlTests(unittest.TestCase):
     def test_backgrounding(self):
         jobs = self.job_controller.jobs
         shell.run_command(
-            self.job_controller,
+            self.job_controller, shell.Launcher(),
             "sh -c 'while true; do sleep 1s; done' &",
             stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr)
         self.assertEquals(jobs.keys(), [1])
@@ -249,6 +250,19 @@ class JobControlTests(unittest.TestCase):
         self.assertEquals(job.state, "finished")
         self.assert_messages(["[1]+ Done\n"])
         self.assertEquals(jobs.keys(), [])
+
+    def test_listing_jobs(self):
+        launcher = shell.LauncherWithBuiltins(
+            shell.Launcher(), self.job_controller.get_builtins())
+        shell.run_command(
+            self.job_controller, launcher, "true &",
+            stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr)
+        self.dispatcher.once(may_block=True)
+        write_fh, read_fh = make_fh_pair()
+        shell.run_command(
+            self.job_controller, launcher, "jobs",
+            stdin=sys.stdin, stdout=write_fh, stderr=sys.stderr)
+        self.assertEquals(read_fh.read(), "[1] Done\n")
 
 
 if __name__ == "__main__":

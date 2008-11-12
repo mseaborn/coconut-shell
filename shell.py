@@ -72,7 +72,7 @@ class CommandExp(object):
     def __init__(self, args):
         self._args = args
 
-    def run(self, launcher, stdin, stdout, stderr):
+    def run(self, launcher, pgroup, stdin, stdout, stderr):
         evaled_args = []
         for arg in self._args:
             evaled_args.extend(arg.eval())
@@ -86,10 +86,12 @@ class CommandExp(object):
                     os.chdir(arg)
             return []
         else:
-            proc = launcher.spawn(
-                evaled_args, stdin=stdin, stdout=stdout,
-                stderr=stderr, close_fds=True, preexec_fn=set_up_signals)
-            return [proc]
+            proc = launcher.spawn(evaled_args, pgroup, stdin=stdin,
+                                  stdout=stdout, stderr=stderr)
+            if proc is None:
+                return []
+            else:
+                return [proc]
 
 
 class PipelineExp(object):
@@ -98,15 +100,15 @@ class PipelineExp(object):
         self._cmd1 = cmd1
         self._cmd2 = cmd2
 
-    def run(self, launcher, stdin, stdout, stderr):
+    def run(self, launcher, pgroup, stdin, stdout, stderr):
         pipe_read_fd, pipe_write_fd = os.pipe()
         pipe_read = os.fdopen(pipe_read_fd, "r")
         pipe_write = os.fdopen(pipe_write_fd, "w")
         procs = []
-        procs.extend(self._cmd1.run(launcher, stdin=stdin, stdout=pipe_write,
-                                    stderr=stderr))
-        procs.extend(self._cmd2.run(launcher, stdin=pipe_read, stdout=stdout,
-                                    stderr=stderr))
+        procs.extend(self._cmd1.run(launcher, pgroup, stdin=stdin,
+                                    stdout=pipe_write, stderr=stderr))
+        procs.extend(self._cmd2.run(launcher, pgroup, stdin=pipe_read,
+                                    stdout=stdout, stderr=stderr))
         return procs
 
 
@@ -116,9 +118,9 @@ class JobExp(object):
         self._cmd = cmd
         self._is_foreground = is_foreground
 
-    def run(self, job_controller, stdin, stdout, stderr):
-        launcher, add_job = job_controller.create_job(self._is_foreground)
-        procs = self._cmd.run(launcher, stdin, stdout, stderr)
+    def run(self, job_controller, launcher, stdin, stdout, stderr):
+        pgroup, add_job = job_controller.create_job(self._is_foreground)
+        procs = self._cmd.run(launcher, pgroup, stdin, stdout, stderr)
         add_job(procs)
 
 
@@ -154,8 +156,34 @@ top_command = parse.Optional(job_expr)
 
 class Launcher(object):
 
-    def spawn(self, args, **kwargs):
-        return subprocess.Popen(args, **kwargs)
+    def spawn(self, args, pgroup, **kwargs):
+        def before_exec():
+            set_up_signals()
+            pgroup.init_process(os.getpid())
+        proc = subprocess.Popen(args, close_fds=True, preexec_fn=before_exec,
+                                **kwargs)
+        pgroup.init_process(proc.pid)
+        return proc
+
+
+class LauncherWithBuiltins(object):
+
+    def __init__(self, launcher, builtins):
+        self._launcher = launcher
+        self._builtins = builtins
+
+    def spawn(self, args, pgroup, **kwargs):
+        if args[0] in self._builtins:
+            self._builtins[args[0]](kwargs["stdout"])
+            return None
+        else:
+            return self._launcher.spawn(args, pgroup, **kwargs)
+
+
+class NullProcessGroup(object):
+
+    def init_process(self, pid):
+        pass
 
 
 class NullJobController(object):
@@ -165,7 +193,7 @@ class NullJobController(object):
             if is_foreground:
                 for proc in procs:
                     proc.wait()
-        return Launcher(), add_job
+        return NullProcessGroup(), add_job
 
 
 def get_one(lst):
@@ -173,10 +201,10 @@ def get_one(lst):
     return lst[0]
 
 
-def run_command(job_controller, line, stdin, stdout, stderr):
+def run_command(job_controller, launcher, line, stdin, stdout, stderr):
     top_expr = top_command + parse.StringEnd()
     for cmd in top_expr.parseString(line):
-        procs = cmd.run(job_controller, stdin, stdout, stderr)
+        procs = cmd.run(job_controller, launcher, stdin, stdout, stderr)
 
 
 def path_starts_with(path1, path2):
@@ -245,13 +273,25 @@ def init_readline():
     readline.set_completer_delims(string.whitespace)
 
 
+class Shell(object):
+
+    def __init__(self):
+        self.job_controller = jobcontrol.JobController(
+            jobcontrol.WaitDispatcher(), sys.stdout)
+        self._launcher = LauncherWithBuiltins(
+            Launcher(), self.job_controller.get_builtins())
+
+    def run_command(self, line, stdin, stdout, stderr):
+        run_command(self.job_controller, self._launcher, line,
+                    stdin, stdout, stderr)
+
+
 def main():
     init_readline()
-    job_controller = jobcontrol.JobController(jobcontrol.WaitDispatcher(),
-                                              sys.stdout)
+    shell = Shell()
     while True:
-        job_controller.shell_to_foreground()
-        job_controller.print_messages()
+        shell.job_controller.shell_to_foreground()
+        shell.job_controller.print_messages()
         prompt = "$ "
         try:
             line = raw_input(prompt)
@@ -259,8 +299,8 @@ def main():
             sys.stdout.write("\n")
             break
         try:
-            run_command(job_controller, line, stdin=sys.stdin,
-                        stdout=sys.stdout, stderr=sys.stderr)
+            shell.run_command(line, stdin=sys.stdin, stdout=sys.stdout,
+                              stderr=sys.stderr)
         except Exception:
             traceback.print_exc()
 

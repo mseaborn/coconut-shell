@@ -110,7 +110,9 @@ class ProcessGroup(object):
         self._foreground = foreground
         self._tty_fd = tty_fd
 
-    def _set_pgid(self, pid):
+    def init_process(self, pid):
+        # This method needs to be called in both the parent and child
+        # processes to avoid race conditions.
         if self._pgid is None:
             self._pgid = pid
         try:
@@ -130,16 +132,6 @@ class ProcessGroup(object):
             except OSError:
                 pass
 
-    def spawn(self, args, preexec_fn, **kwargs):
-        def set_pgid():
-            self._set_pgid(os.getpid())
-            preexec_fn()
-        proc = subprocess.Popen(args, preexec_fn=set_pgid, **kwargs)
-        # Calling setpgid() in the parent as well as the child avoids
-        # a race condition.
-        self._set_pgid(proc.pid)
-        return proc
-
     def get_pgid(self):
         return self._pgid
 
@@ -156,6 +148,8 @@ class JobController(object):
         launcher = ProcessGroup(is_foreground, tty_fd=sys.stdout)
 
         def add_job(procs):
+            if len(procs) == 0:
+                return
             def on_state_change():
                 self._state_changed.add((job_id, job))
             job_id = max([0] + self.jobs.keys()) + 1
@@ -189,3 +183,13 @@ class JobController(object):
                 self._output.write("[%s]+ Done\n" % job_id)
                 del self.jobs[job_id]
         self._state_changed.clear()
+
+    def _list_jobs(self, stdout):
+        state_map = {"running": "Running",
+                     "stopped": "Stopped",
+                     "finished": "Done"}
+        for job_id, job in sorted(self.jobs.iteritems()):
+            stdout.write("[%s] %s\n" % (job_id, state_map[job.state]))
+
+    def get_builtins(self):
+        return {"jobs": self._list_jobs}
