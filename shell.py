@@ -17,7 +17,9 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
 # 02110-1301 USA.
 
+import errno
 import glob
+import itertools
 import os
 import pwd
 import readline
@@ -168,6 +170,29 @@ def in_forked(func):
 
 MAXFD = os.sysconf("SC_OPEN_MAX")
 
+def close_fds(keep_fds):
+    for fd in xrange(MAXFD):
+        if fd not in keep_fds:
+            try:
+                os.close(fd)
+            except OSError, exn:
+                if exn.errno != errno.EBADF:
+                    raise
+
+def set_up_fds(fds):
+    involved_fds = set()
+    for fd_dest, fd in fds.iteritems():
+        involved_fds.add(fd_dest)
+        involved_fds.add(fd.fileno())
+    fds_with_temps = zip(fds.iteritems(),
+                         (fd for fd in itertools.count()
+                          if fd not in involved_fds))
+    for (fd_dest, fd), temp_fd in fds_with_temps:
+        os.dup2(fd.fileno(), temp_fd)
+    for (fd_dest, fd), temp_fd in fds_with_temps:
+        os.dup2(temp_fd, fd_dest)
+    close_fds(fds)
+
 
 class Launcher(object):
 
@@ -176,15 +201,7 @@ class Launcher(object):
             try:
                 set_up_signals()
                 pgroup.init_process(os.getpid())
-                # TODO: handle overlapping FD redirection properly
-                for fd_dest, fd in sorted(fds.iteritems()):
-                    os.dup2(fd.fileno(), fd_dest)
-                for fd in xrange(MAXFD):
-                    if fd not in fds:
-                        try:
-                            os.close(fd)
-                        except OSError:
-                            pass
+                set_up_fds(fds)
                 try:
                     os.execvp(args[0], args)
                 except OSError:

@@ -200,6 +200,18 @@ class ShellTests(tempdir_test.TempDirTestCase):
                           "bash -c 'echo hello >&123'", fds)
         self.assertEquals(read_fd.read(), "hello\n")
 
+    def test_fd_setting_with_swapping(self):
+        write_fd1, read_fd1 = make_fh_pair()
+        write_fd2, read_fd2 = make_fh_pair()
+        job_controller = shell.NullJobController()
+        fds = {write_fd1.fileno(): write_fd2,
+               write_fd2.fileno(): write_fd1}
+        command = "bash -c 'echo foo >&%i; echo bar >&%i'" % (
+            write_fd1.fileno(), write_fd2.fileno())
+        shell.run_command(job_controller, shell.Launcher(), command, fds)
+        self.assertEquals(read_fd2.read(), "foo\n")
+        self.assertEquals(read_fd1.read(), "bar\n")
+
 
 class JobControlTests(unittest.TestCase):
 
