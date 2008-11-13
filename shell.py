@@ -18,6 +18,7 @@
 # 02110-1301 USA.
 
 import errno
+import gc
 import glob
 import itertools
 import os
@@ -82,6 +83,17 @@ class RedirectFD(object):
 
     def eval(self, args, fds):
         fds[self._fd1] = fds[self._fd2]
+
+
+class RedirectFile(object):
+
+    def __init__(self, dest_fd, mode, filename):
+        self._dest_fd = dest_fd
+        self._mode = mode
+        self._filename = filename
+
+    def eval(self, args, fds):
+        fds[self._dest_fd] = open(self._filename, self._mode)
 
 
 class CommandExp(object):
@@ -156,19 +168,27 @@ bare_argument = parse.Word(bare_chars) \
 
 fd_number = parse.Word(parse.srange("[0-9]")) \
     .setParseAction(lambda text, loc, args: int(get_one(args)))
-redirect_lhs_stdin = parse.Literal("<") \
-    .setParseAction(lambda text, loc, args: FILENO_STDIN)
-redirect_lhs_stdout = parse.Literal(">") \
-    .setParseAction(lambda text, loc, args: FILENO_STDOUT)
-redirect_lhs_any = (fd_number + (parse.Literal("<") |
-                                 parse.Literal(">"))) \
-    .setParseAction(lambda text, loc, args: args[0])
-redirect_lhs = redirect_lhs_stdin | redirect_lhs_stdout | redirect_lhs_any
 
-redirect = (redirect_lhs + parse.Literal("&").leaveWhitespace() + fd_number) \
-    .setParseAction(lambda text, loc, args: RedirectFD(args[0], args[2]))
+redirect_arrow = (
+    parse.Literal("<") \
+        .setParseAction(lambda text, loc, args: [(FILENO_STDIN, "r")]) |
+    parse.Literal(">") \
+        .setParseAction(lambda text, loc, args: [(FILENO_STDOUT, "w")]))
 
-argument = redirect | bare_argument | quoted_argument
+redirect_lhs = (
+    redirect_arrow
+        .setParseAction(lambda text, loc, args: [get_one(args)]) |
+    (fd_number + redirect_arrow.leaveWhitespace())
+        .setParseAction(lambda text, loc, args: [(args[0], args[1][1])]))
+
+redirect_fd = (redirect_lhs + parse.Literal("&").leaveWhitespace() +
+               fd_number) \
+    .setParseAction(lambda text, loc, args: RedirectFD(args[0][0], args[2]))
+redirect_file = (redirect_lhs + parse.Word(bare_chars)) \
+    .setParseAction(lambda text, loc, args: RedirectFile(args[0][0],
+                                                         args[0][1], args[1]))
+
+argument = redirect_fd | redirect_file | bare_argument | quoted_argument
 
 command = (argument + parse.ZeroOrMore(argument)) \
           .setParseAction(lambda text, loc, args: CommandExp(args))
@@ -225,6 +245,10 @@ class Launcher(object):
     def spawn(self, args, pgroup, fds):
         def in_subprocess():
             try:
+                # Disable GC so that Python does not try to close FDs
+                # that we have closed ourselves, which prints "close
+                # failed: [Errno 9] Bad file descriptor" errors.
+                gc.disable()
                 set_up_signals()
                 pgroup.init_process(os.getpid())
                 set_up_fds(fds)

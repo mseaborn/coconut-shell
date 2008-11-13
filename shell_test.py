@@ -41,6 +41,14 @@ def make_fh_pair():
     return write_fh, read_fh
 
 
+def read_file(filename):
+    fh = open(filename, "r")
+    try:
+        return fh.read()
+    finally:
+        fh.close()
+
+
 def write_file(filename, data):
     fh = open(filename, "w")
     try:
@@ -229,8 +237,14 @@ class ShellTests(tempdir_test.TempDirTestCase):
                           "cat <& 123", {123: read_fd1, 1: write_fd2})
         self.assertEquals(read_fd2.read(), "supercow powers")
 
+    def test_not_a_redirection(self):
+        temp_file = os.path.join(self.make_temp_dir(), "file")
+        data = self.command_output("echo foo 42 >%s" % temp_file)
+        self.assertEquals(data, "")
+        self.assertEquals(read_file(temp_file), "foo 42\n")
 
-class FDRedirectionTests(unittest.TestCase):
+
+class FDRedirectionTests(tempdir_test.TempDirTestCase):
 
     def fds_for_command(self, command, fds):
         fds_got = []
@@ -243,6 +257,38 @@ class FDRedirectionTests(unittest.TestCase):
         shell.run_command(job_controller, DummyLauncher(), command, fds)
         self.assertEquals(len(fds_got), 1)
         return fds_got[0]
+
+    def test_stdin_from_file(self):
+        temp_dir = self.make_temp_dir()
+        write_file(os.path.join(temp_dir, "file"), "")
+        os.chdir(temp_dir)
+        fds = self.fds_for_command("foo <file", {})
+        self.assertEquals(fds.keys(), [0])
+        self.assertEquals(fds[0].mode, "r")
+
+    def test_any_from_file(self):
+        temp_dir = self.make_temp_dir()
+        write_file(os.path.join(temp_dir, "file"), "")
+        os.chdir(temp_dir)
+        fds = self.fds_for_command("foo 123<file", {})
+        self.assertEquals(fds.keys(), [123])
+        self.assertEquals(fds[123].mode, "r")
+
+    def test_stdout_to_file(self):
+        temp_dir = self.make_temp_dir()
+        os.chdir(temp_dir)
+        fds = self.fds_for_command("foo >file", {})
+        self.assertEquals(fds.keys(), [1])
+        self.assertEquals(fds[1].mode, "w")
+        assert os.path.exists(os.path.join(temp_dir, "file"))
+
+    def test_any_to_file(self):
+        temp_dir = self.make_temp_dir()
+        os.chdir(temp_dir)
+        fds = self.fds_for_command("foo 123>file", {})
+        self.assertEquals(fds.keys(), [123])
+        self.assertEquals(fds[123].mode, "w")
+        assert os.path.exists(os.path.join(temp_dir, "file"))
 
     def test_stdin_to_fd(self):
         fd = open(os.devnull)
@@ -267,6 +313,17 @@ class FDRedirectionTests(unittest.TestCase):
         fds = self.fds_for_command("foo 45<& 123", {123: fd})
         self.assertEquals(sorted(fds.keys()), [45, 123])
         self.assertEquals(fds[45], fd)
+
+    def test_file_open_error(self):
+        # TODO: Handle this nicely.
+        self.assertRaises(
+            IOError, lambda: self.fds_for_command("foo </does/not/exist", {}))
+
+    def test_bad_fd_error(self):
+        # TODO: Handle this properly.  Either don't start any part of
+        # the job at all, or record it in the jobs list properly.
+        self.assertRaises(KeyError,
+                          lambda: self.fds_for_command("foo >&123", {}))
 
 
 class JobControlTests(unittest.TestCase):
