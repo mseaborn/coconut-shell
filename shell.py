@@ -31,6 +31,11 @@ import pyparsing as parse
 import jobcontrol
 
 
+FILENO_STDIN = 0
+FILENO_STDOUT = 1
+FILENO_STDERR = 2
+
+
 def set_up_signals():
     # Python changes signal handler settings on startup, including
     # setting SIGPIPE to SIG_IGN (ignore), which gets inherited by
@@ -71,7 +76,7 @@ class CommandExp(object):
     def __init__(self, args):
         self._args = args
 
-    def run(self, launcher, pgroup, stdin, stdout, stderr):
+    def run(self, launcher, pgroup, fds):
         evaled_args = []
         for arg in self._args:
             evaled_args.extend(arg.eval())
@@ -85,8 +90,7 @@ class CommandExp(object):
                     os.chdir(arg)
             return []
         else:
-            proc = launcher.spawn(evaled_args, pgroup, stdin=stdin,
-                                  stdout=stdout, stderr=stderr)
+            proc = launcher.spawn(evaled_args, pgroup, fds)
             if proc is None:
                 return []
             else:
@@ -99,15 +103,15 @@ class PipelineExp(object):
         self._cmd1 = cmd1
         self._cmd2 = cmd2
 
-    def run(self, launcher, pgroup, stdin, stdout, stderr):
+    def run(self, launcher, pgroup, fds):
         pipe_read_fd, pipe_write_fd = os.pipe()
-        pipe_read = os.fdopen(pipe_read_fd, "r")
-        pipe_write = os.fdopen(pipe_write_fd, "w")
+        fds1 = fds.copy()
+        fds2 = fds.copy()
+        fds1[FILENO_STDOUT] = os.fdopen(pipe_write_fd, "w")
+        fds2[FILENO_STDIN] = os.fdopen(pipe_read_fd, "r")
         procs = []
-        procs.extend(self._cmd1.run(launcher, pgroup, stdin=stdin,
-                                    stdout=pipe_write, stderr=stderr))
-        procs.extend(self._cmd2.run(launcher, pgroup, stdin=pipe_read,
-                                    stdout=stdout, stderr=stderr))
+        procs.extend(self._cmd1.run(launcher, pgroup, fds1))
+        procs.extend(self._cmd2.run(launcher, pgroup, fds2))
         return procs
 
 
@@ -117,9 +121,9 @@ class JobExp(object):
         self._cmd = cmd
         self._is_foreground = is_foreground
 
-    def run(self, job_controller, launcher, stdin, stdout, stderr):
+    def run(self, job_controller, launcher, fds):
         pgroup, add_job = job_controller.create_job(self._is_foreground)
-        procs = self._cmd.run(launcher, pgroup, stdin, stdout, stderr)
+        procs = self._cmd.run(launcher, pgroup, fds)
         add_job(procs)
 
 
@@ -164,26 +168,23 @@ def in_forked(func):
 
 MAXFD = os.sysconf("SC_OPEN_MAX")
 
-def close_fds():
-    for fd in xrange(3, MAXFD):
-        try:
-            os.close(fd)
-        except OSError:
-            pass
-
 
 class Launcher(object):
 
-    def spawn(self, args, pgroup, stdin, stdout, stderr):
+    def spawn(self, args, pgroup, fds):
         def in_subprocess():
             try:
                 set_up_signals()
                 pgroup.init_process(os.getpid())
                 # TODO: handle overlapping FD redirection properly
-                os.dup2(stdin.fileno(), 0)
-                os.dup2(stdout.fileno(), 1)
-                os.dup2(stderr.fileno(), 2)
-                close_fds()
+                for fd_dest, fd in sorted(fds.iteritems()):
+                    os.dup2(fd.fileno(), fd_dest)
+                for fd in xrange(MAXFD):
+                    if fd not in fds:
+                        try:
+                            os.close(fd)
+                        except OSError:
+                            pass
                 try:
                     os.execvp(args[0], args)
                 except OSError:
@@ -201,12 +202,12 @@ class LauncherWithBuiltins(object):
         self._launcher = launcher
         self._builtins = builtins
 
-    def spawn(self, args, pgroup, **kwargs):
+    def spawn(self, args, pgroup, fds):
         if args[0] in self._builtins:
-            self._builtins[args[0]](kwargs["stdout"])
+            self._builtins[args[0]](fds[FILENO_STDOUT])
             return None
         else:
-            return self._launcher.spawn(args, pgroup, **kwargs)
+            return self._launcher.spawn(args, pgroup, fds)
 
 
 class NullProcessGroup(object):
@@ -230,10 +231,10 @@ def get_one(lst):
     return lst[0]
 
 
-def run_command(job_controller, launcher, line, stdin, stdout, stderr):
+def run_command(job_controller, launcher, line, fds):
     top_expr = top_command + parse.StringEnd()
     for cmd in top_expr.parseString(line):
-        procs = cmd.run(job_controller, launcher, stdin, stdout, stderr)
+        procs = cmd.run(job_controller, launcher, fds)
 
 
 def path_starts_with(path1, path2):
@@ -310,14 +311,16 @@ class Shell(object):
         self._launcher = LauncherWithBuiltins(
             Launcher(), self.job_controller.get_builtins())
 
-    def run_command(self, line, stdin, stdout, stderr):
-        run_command(self.job_controller, self._launcher, line,
-                    stdin, stdout, stderr)
+    def run_command(self, line, fds):
+        run_command(self.job_controller, self._launcher, line, fds)
 
 
 def main():
     init_readline()
     shell = Shell()
+    fds = {FILENO_STDIN: sys.stdin,
+           FILENO_STDOUT: sys.stdout,
+           FILENO_STDERR: sys.stderr}
     while True:
         shell.job_controller.shell_to_foreground()
         shell.job_controller.print_messages()
@@ -328,8 +331,7 @@ def main():
             sys.stdout.write("\n")
             break
         try:
-            shell.run_command(line, stdin=sys.stdin, stdout=sys.stdout,
-                              stderr=sys.stderr)
+            shell.run_command(line, fds)
         except Exception:
             traceback.print_exc()
 

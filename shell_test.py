@@ -62,6 +62,10 @@ def pop_all(a_list):
     return copy
 
 
+def std_fds(stdin, stdout, stderr):
+    return {0: stdin, 1: stdout, 2: stderr}
+
+
 class ShellTests(tempdir_test.TempDirTestCase):
 
     def patch_env_var(self, key, value):
@@ -74,8 +78,8 @@ class ShellTests(tempdir_test.TempDirTestCase):
         write_stderr, read_stderr = make_fh_pair()
         job_controller = shell.NullJobController()
         shell.run_command(job_controller, shell.Launcher(), command,
-                          stdin=open(os.devnull, "r"),
-                          stdout=write_stdout, stderr=write_stderr)
+                          std_fds(stdin=open(os.devnull, "r"),
+                                  stdout=write_stdout, stderr=write_stderr))
         self.assertEquals(read_stderr.read(), "")
         return read_stdout.read()
 
@@ -115,8 +119,8 @@ class ShellTests(tempdir_test.TempDirTestCase):
         job_controller = shell.NullJobController()
         shell.run_command(job_controller, shell.Launcher(),
                           "made-up-command-123 arg1 arg2",
-                          stdin=open(os.devnull, "r"),
-                          stdout=write_stdout, stderr=write_stderr)
+                          std_fds(stdin=open(os.devnull, "r"),
+                                  stdout=write_stdout, stderr=write_stderr))
         self.assertEquals(read_stdout.read(), "")
         self.assertEquals(read_stderr.read(),
                           "made-up-command-123: command not found\n")
@@ -183,6 +187,19 @@ class ShellTests(tempdir_test.TempDirTestCase):
         self.assertEquals(list(shell.readline_complete("~/a-")),
                           ["~/a-dir/"])
 
+    def test_fds_not_leaked(self):
+        data = self.command_output("ls /proc/self/fd")
+        # FD 3 is the directory FD opened to list the directory.
+        self.assertEquals(data, "0\n1\n2\n3\n")
+
+    def test_fd_setting(self):
+        write_fd, read_fd = make_fh_pair()
+        job_controller = shell.NullJobController()
+        fds = {123: write_fd}
+        shell.run_command(job_controller, shell.Launcher(),
+                          "bash -c 'echo hello >&123'", fds)
+        self.assertEquals(read_fd.read(), "hello\n")
+
 
 class JobControlTests(unittest.TestCase):
 
@@ -208,7 +225,7 @@ class JobControlTests(unittest.TestCase):
         self.job_controller.shell_to_foreground()
         shell.run_command(
             self.job_controller, shell.Launcher(), "true",
-            stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr)
+            std_fds(stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr))
         self.job_controller.shell_to_foreground()
         self.assertEquals(self.job_controller.jobs.keys(), [])
         self.assert_messages([])
@@ -217,7 +234,7 @@ class JobControlTests(unittest.TestCase):
         self.job_controller.shell_to_foreground()
         shell.run_command(
             self.job_controller, shell.Launcher(), "sh -c 'kill -STOP $$'",
-            stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr)
+            std_fds(stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr))
         self.job_controller.shell_to_foreground()
         jobs = self.job_controller.jobs
         self.assertEquals(jobs.keys(), [1])
@@ -236,7 +253,7 @@ class JobControlTests(unittest.TestCase):
         shell.run_command(
             self.job_controller, shell.Launcher(),
             "sh -c 'while true; do sleep 1s; done' &",
-            stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr)
+            std_fds(stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr))
         self.assertEquals(jobs.keys(), [1])
         job = jobs[1]
         try:
@@ -268,12 +285,12 @@ class JobControlTests(unittest.TestCase):
             shell.Launcher(), self.job_controller.get_builtins())
         shell.run_command(
             self.job_controller, launcher, "true &",
-            stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr)
+            std_fds(stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr))
         self.dispatcher.once(may_block=True)
         write_fh, read_fh = make_fh_pair()
         shell.run_command(
             self.job_controller, launcher, "jobs",
-            stdin=sys.stdin, stdout=write_fh, stderr=sys.stderr)
+            std_fds(stdin=sys.stdin, stdout=write_fh, stderr=sys.stderr))
         self.assertEquals(read_fh.read(), "[1] Done\n")
 
 
