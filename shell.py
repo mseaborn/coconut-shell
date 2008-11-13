@@ -51,8 +51,8 @@ class StringArgument(object):
     def __init__(self, string):
         self._string = string
 
-    def eval(self):
-        return [self._string]
+    def eval(self, args, fds):
+        args.append(self._string)
 
 
 class ExpandStringArgument(object):
@@ -64,13 +64,24 @@ class ExpandStringArgument(object):
         # checking the filesystem would be pointless.
         self._do_glob = "*" in string or "?" in string
 
-    def eval(self):
+    def eval(self, args, fds):
         string = os.path.expanduser(self._string)
         if self._do_glob:
             matches = sorted(glob.glob(string))
             if len(matches) > 0:
-                return matches
-        return [string]
+                args.extend(matches)
+                return
+        args.append(string)
+
+
+class RedirectFD(object):
+
+    def __init__(self, fd1, fd2):
+        self._fd1 = fd1
+        self._fd2 = fd2
+
+    def eval(self, args, fds):
+        fds[self._fd1] = fds[self._fd2]
 
 
 class CommandExp(object):
@@ -80,8 +91,9 @@ class CommandExp(object):
 
     def run(self, launcher, pgroup, fds):
         evaled_args = []
+        fds = fds.copy()
         for arg in self._args:
-            evaled_args.extend(arg.eval())
+            arg.eval(evaled_args, fds)
         if evaled_args[0] == "cd":
             chdir_args = evaled_args[1:]
             if len(chdir_args) == 0:
@@ -135,14 +147,28 @@ single_quoted = parse.QuotedString(quoteChar="'", escChar='\\', multiline=True)
 quoted_argument = (double_quoted | single_quoted) \
     .setParseAction(lambda text, loc, arg: StringArgument(get_one(arg)))
 
-special_chars = "|&\"'"
+special_chars = "|&\"'<>"
 bare_chars = "".join(sorted(set(parse.srange("[a-zA-Z0-9]") +
                                 string.punctuation)
                             - set(special_chars)))
 bare_argument = parse.Word(bare_chars) \
     .setParseAction(lambda text, loc, arg: ExpandStringArgument(get_one(arg)))
 
-argument = bare_argument | quoted_argument
+fd_number = parse.Word(parse.srange("[0-9]")) \
+    .setParseAction(lambda text, loc, args: int(get_one(args)))
+redirect_lhs_stdin = parse.Literal("<") \
+    .setParseAction(lambda text, loc, args: FILENO_STDIN)
+redirect_lhs_stdout = parse.Literal(">") \
+    .setParseAction(lambda text, loc, args: FILENO_STDOUT)
+redirect_lhs_any = (fd_number + (parse.Literal("<") |
+                                 parse.Literal(">"))) \
+    .setParseAction(lambda text, loc, args: args[0])
+redirect_lhs = redirect_lhs_stdin | redirect_lhs_stdout | redirect_lhs_any
+
+redirect = (redirect_lhs + parse.Literal("&").leaveWhitespace() + fd_number) \
+    .setParseAction(lambda text, loc, args: RedirectFD(args[0], args[2]))
+
+argument = redirect | bare_argument | quoted_argument
 
 command = (argument + parse.ZeroOrMore(argument)) \
           .setParseAction(lambda text, loc, args: CommandExp(args))

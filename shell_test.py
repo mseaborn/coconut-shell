@@ -212,6 +212,62 @@ class ShellTests(tempdir_test.TempDirTestCase):
         self.assertEquals(read_fd2.read(), "foo\n")
         self.assertEquals(read_fd1.read(), "bar\n")
 
+    def test_fd_redirection_stdout(self):
+        job_controller = shell.NullJobController()
+        write_fd, read_fd = make_fh_pair()
+        shell.run_command(job_controller, shell.Launcher(),
+                          "echo hello >& 123", {123: write_fd})
+        self.assertEquals(read_fd.read(), "hello\n")
+
+    def test_fd_redirection_stdin(self):
+        write_fd1, read_fd1 = make_fh_pair()
+        write_fd2, read_fd2 = make_fh_pair()
+        write_fd1.write("supercow powers")
+        write_fd1.close()
+        job_controller = shell.NullJobController()
+        shell.run_command(job_controller, shell.Launcher(),
+                          "cat <& 123", {123: read_fd1, 1: write_fd2})
+        self.assertEquals(read_fd2.read(), "supercow powers")
+
+
+class FDRedirectionTests(unittest.TestCase):
+
+    def fds_for_command(self, command, fds):
+        fds_got = []
+        class DummyLauncher(object):
+            def spawn(self2, args, pgroup, fds):
+                self.assertEquals(args, ["foo"])
+                fds_got.append(fds)
+
+        job_controller = shell.NullJobController()
+        shell.run_command(job_controller, DummyLauncher(), command, fds)
+        self.assertEquals(len(fds_got), 1)
+        return fds_got[0]
+
+    def test_stdin_to_fd(self):
+        fd = open(os.devnull)
+        fds = self.fds_for_command("foo <& 123", {123: fd})
+        self.assertEquals(sorted(fds.keys()), [0, 123])
+        self.assertEquals(fds[0], fd)
+
+    def test_stdout_to_fd(self):
+        fd = open(os.devnull)
+        fds = self.fds_for_command("foo >& 123", {123: fd})
+        self.assertEquals(sorted(fds.keys()), [1, 123])
+        self.assertEquals(fds[1], fd)
+
+    def test_any_to_fd_1(self):
+        fd = open(os.devnull)
+        fds = self.fds_for_command("foo 45>& 123", {123: fd})
+        self.assertEquals(sorted(fds.keys()), [45, 123])
+        self.assertEquals(fds[45], fd)
+
+    def test_any_to_fd_2(self):
+        fd = open(os.devnull)
+        fds = self.fds_for_command("foo 45<& 123", {123: fd})
+        self.assertEquals(sorted(fds.keys()), [45, 123])
+        self.assertEquals(fds[45], fd)
+
 
 class JobControlTests(unittest.TestCase):
 
