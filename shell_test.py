@@ -109,6 +109,18 @@ class ShellTests(tempdir_test.TempDirTestCase):
         self.assertRaises(parse.ParseException,
                           lambda: self.command_output('echo \000'))
 
+    def test_command_not_found(self):
+        write_stdout, read_stdout = make_fh_pair()
+        write_stderr, read_stderr = make_fh_pair()
+        job_controller = shell.NullJobController()
+        shell.run_command(job_controller, shell.Launcher(),
+                          "made-up-command-123 arg1 arg2",
+                          stdin=open(os.devnull, "r"),
+                          stdout=write_stdout, stderr=write_stderr)
+        self.assertEquals(read_stdout.read(), "")
+        self.assertEquals(read_stderr.read(),
+                          "made-up-command-123: command not found\n")
+
     def test_globbing(self):
         temp_dir = self.make_temp_dir()
         write_file(os.path.join(temp_dir, "aaa"), "")

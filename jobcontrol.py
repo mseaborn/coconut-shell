@@ -29,6 +29,7 @@ class WaitDispatcher(object):
         self._by_pid = {}
 
     def add_handler(self, pid, callback):
+        assert isinstance(pid, int), pid
         self._by_pid[pid] = callback
 
     def once(self, may_block):
@@ -70,7 +71,7 @@ class ChildProcess(object):
 class Job(object):
 
     def __init__(self, dispatcher, procs, pgid, on_state_change):
-        self.procs = [ChildProcess(proc.pid) for proc in procs]
+        self.procs = [ChildProcess(proc) for proc in procs]
         self.pgid = pgid
         self.state = "running"
         for proc in self.procs:

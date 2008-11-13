@@ -22,7 +22,6 @@ import os
 import pwd
 import readline
 import signal
-import subprocess
 import string
 import sys
 import traceback
@@ -154,24 +153,46 @@ job_expr = (pipeline +
 top_command = parse.Optional(job_expr)
 
 
-class Popen(subprocess.Popen):
+def in_forked(func):
+    pid = os.fork()
+    if pid == 0:
+        try:
+            func()
+        finally:
+            os._exit(1)
+    return pid
 
-    # subprocess usually does waitpid() for you by polling with
-    # WNOHANG, which can cause non-deterministic behaviour.  Override
-    # that, because we do waitpid() ourselves.
-    def poll(self, _deadstate=None):
-        pass
+MAXFD = os.sysconf("SC_OPEN_MAX")
+
+def close_fds():
+    for fd in xrange(3, MAXFD):
+        try:
+            os.close(fd)
+        except OSError:
+            pass
 
 
 class Launcher(object):
 
-    def spawn(self, args, pgroup, **kwargs):
-        def before_exec():
-            set_up_signals()
-            pgroup.init_process(os.getpid())
-        proc = Popen(args, close_fds=True, preexec_fn=before_exec, **kwargs)
-        pgroup.init_process(proc.pid)
-        return proc
+    def spawn(self, args, pgroup, stdin, stdout, stderr):
+        def in_subprocess():
+            try:
+                set_up_signals()
+                pgroup.init_process(os.getpid())
+                # TODO: handle overlapping FD redirection properly
+                os.dup2(stdin.fileno(), 0)
+                os.dup2(stdout.fileno(), 1)
+                os.dup2(stderr.fileno(), 2)
+                close_fds()
+                try:
+                    os.execvp(args[0], args)
+                except OSError:
+                    sys.stderr.write("%s: command not found\n" % args[0])
+            except:
+                traceback.print_exc()
+        pid = in_forked(in_subprocess)
+        pgroup.init_process(pid)
+        return pid
 
 
 class LauncherWithBuiltins(object):
@@ -200,7 +221,7 @@ class NullJobController(object):
         def add_job(procs):
             if is_foreground:
                 for proc in procs:
-                    proc.wait()
+                    os.waitpid(proc, 0)
         return NullProcessGroup(), add_job
 
 
