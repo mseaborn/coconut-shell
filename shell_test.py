@@ -74,6 +74,10 @@ def std_fds(stdin, stdout, stderr):
     return {0: stdin, 1: stdout, 2: stderr}
 
 
+def make_launcher():
+    return shell.LauncherWithBuiltins(shell.Launcher(), shell.simple_builtins)
+
+
 class ShellTests(tempdir_test.TempDirTestCase):
 
     def patch_env_var(self, key, value):
@@ -85,7 +89,7 @@ class ShellTests(tempdir_test.TempDirTestCase):
         write_stdout, read_stdout = make_fh_pair()
         write_stderr, read_stderr = make_fh_pair()
         job_controller = shell.NullJobController()
-        shell.run_command(job_controller, shell.Launcher(), command,
+        shell.run_command(job_controller, make_launcher(), command,
                           std_fds(stdin=open(os.devnull, "r"),
                                   stdout=write_stdout, stderr=write_stderr))
         self.assertEquals(read_stderr.read(), "")
@@ -125,7 +129,7 @@ class ShellTests(tempdir_test.TempDirTestCase):
         write_stdout, read_stdout = make_fh_pair()
         write_stderr, read_stderr = make_fh_pair()
         job_controller = shell.NullJobController()
-        shell.run_command(job_controller, shell.Launcher(),
+        shell.run_command(job_controller, make_launcher(),
                           "made-up-command-123 arg1 arg2",
                           std_fds(stdin=open(os.devnull, "r"),
                                   stdout=write_stdout, stderr=write_stderr))
@@ -204,7 +208,7 @@ class ShellTests(tempdir_test.TempDirTestCase):
         write_fd, read_fd = make_fh_pair()
         job_controller = shell.NullJobController()
         fds = {123: write_fd}
-        shell.run_command(job_controller, shell.Launcher(),
+        shell.run_command(job_controller, make_launcher(),
                           "bash -c 'echo hello >&123'", fds)
         self.assertEquals(read_fd.read(), "hello\n")
 
@@ -216,14 +220,14 @@ class ShellTests(tempdir_test.TempDirTestCase):
                write_fd2.fileno(): write_fd1}
         command = "bash -c 'echo foo >&%i; echo bar >&%i'" % (
             write_fd1.fileno(), write_fd2.fileno())
-        shell.run_command(job_controller, shell.Launcher(), command, fds)
+        shell.run_command(job_controller, make_launcher(), command, fds)
         self.assertEquals(read_fd2.read(), "foo\n")
         self.assertEquals(read_fd1.read(), "bar\n")
 
     def test_fd_redirection_stdout(self):
         job_controller = shell.NullJobController()
         write_fd, read_fd = make_fh_pair()
-        shell.run_command(job_controller, shell.Launcher(),
+        shell.run_command(job_controller, make_launcher(),
                           "echo hello >& 123", {123: write_fd})
         self.assertEquals(read_fd.read(), "hello\n")
 
@@ -233,7 +237,7 @@ class ShellTests(tempdir_test.TempDirTestCase):
         write_fd1.write("supercow powers")
         write_fd1.close()
         job_controller = shell.NullJobController()
-        shell.run_command(job_controller, shell.Launcher(),
+        shell.run_command(job_controller, make_launcher(),
                           "cat <& 123", {123: read_fd1, 1: write_fd2})
         self.assertEquals(read_fd2.read(), "supercow powers")
 
@@ -349,7 +353,7 @@ class JobControlTests(unittest.TestCase):
         # this and should not assume they are run with a tty.
         self.job_controller.shell_to_foreground()
         shell.run_command(
-            self.job_controller, shell.Launcher(), "true",
+            self.job_controller, make_launcher(), "true",
             std_fds(stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr))
         self.job_controller.shell_to_foreground()
         self.assertEquals(self.job_controller.jobs.keys(), [])
@@ -358,7 +362,7 @@ class JobControlTests(unittest.TestCase):
     def test_foreground_job_is_stopped(self):
         self.job_controller.shell_to_foreground()
         shell.run_command(
-            self.job_controller, shell.Launcher(), "sh -c 'kill -STOP $$'",
+            self.job_controller, make_launcher(), "sh -c 'kill -STOP $$'",
             std_fds(stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr))
         self.job_controller.shell_to_foreground()
         jobs = self.job_controller.jobs
@@ -376,7 +380,7 @@ class JobControlTests(unittest.TestCase):
     def test_backgrounding(self):
         jobs = self.job_controller.jobs
         shell.run_command(
-            self.job_controller, shell.Launcher(),
+            self.job_controller, make_launcher(),
             "sh -c 'while true; do sleep 1s; done' &",
             std_fds(stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr))
         self.assertEquals(jobs.keys(), [1])

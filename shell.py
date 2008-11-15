@@ -106,21 +106,11 @@ class CommandExp(object):
         fds = fds.copy()
         for arg in self._args:
             arg.eval(evaled_args, fds)
-        if evaled_args[0] == "cd":
-            chdir_args = evaled_args[1:]
-            if len(chdir_args) == 0:
-                # TODO: report nicer error when HOME is not set
-                os.chdir(os.environ["HOME"])
-            else:
-                for arg in chdir_args:
-                    os.chdir(arg)
+        proc = launcher.spawn(evaled_args, pgroup, fds)
+        if proc is None:
             return []
         else:
-            proc = launcher.spawn(evaled_args, pgroup, fds)
-            if proc is None:
-                return []
-            else:
-                return [proc]
+            return [proc]
 
 
 class PipelineExp(object):
@@ -263,6 +253,15 @@ class Launcher(object):
         return pid
 
 
+def chdir_builtin(args, fds):
+    if len(args) == 0:
+        # TODO: report nicer error when HOME is not set
+        os.chdir(os.environ["HOME"])
+    else:
+        for arg in args:
+            os.chdir(arg)
+
+
 class LauncherWithBuiltins(object):
 
     def __init__(self, launcher, builtins):
@@ -271,7 +270,7 @@ class LauncherWithBuiltins(object):
 
     def spawn(self, args, pgroup, fds):
         if args[0] in self._builtins:
-            self._builtins[args[0]](fds[FILENO_STDOUT])
+            self._builtins[args[0]](args[1:], fds)
             return None
         else:
             return self._launcher.spawn(args, pgroup, fds)
@@ -370,13 +369,18 @@ def init_readline():
     readline.set_completer_delims(string.whitespace)
 
 
+simple_builtins = {"cd": chdir_builtin}
+
+
 class Shell(object):
 
     def __init__(self):
         self.job_controller = jobcontrol.JobController(
             jobcontrol.WaitDispatcher(), sys.stdout)
-        self._launcher = LauncherWithBuiltins(
-            Launcher(), self.job_controller.get_builtins())
+        builtins = {}
+        builtins.update(simple_builtins)
+        builtins.update(self.job_controller.get_builtins())
+        self._launcher = LauncherWithBuiltins(Launcher(), builtins)
 
     def run_command(self, line, fds):
         run_command(self.job_controller, self._launcher, line, fds)

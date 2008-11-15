@@ -185,7 +185,8 @@ class JobController(object):
                 del self.jobs[job_id]
         self._state_changed.clear()
 
-    def _list_jobs(self, stdout):
+    def _list_jobs(self, args, fds):
+        stdout = fds[1]
         state_map = {"running": "Running",
                      "stopped": "Stopped",
                      "finished": "Done"}
