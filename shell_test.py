@@ -16,6 +16,7 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
 # 02110-1301 USA.
 
+import errno
 import os
 import signal
 import sys
@@ -345,6 +346,8 @@ class JobControlTests(unittest.TestCase):
         self.dispatcher = jobcontrol.WaitDispatcher()
         self.job_controller = jobcontrol.JobController(
             self.dispatcher, Output())
+        self.launcher = shell.LauncherWithBuiltins(
+            shell.Launcher(), self.job_controller.get_builtins())
         self.assert_messages = assert_messages
 
     def test_foreground(self):
@@ -353,7 +356,7 @@ class JobControlTests(unittest.TestCase):
         # this and should not assume they are run with a tty.
         self.job_controller.shell_to_foreground()
         shell.run_command(
-            self.job_controller, make_launcher(), "true",
+            self.job_controller, self.launcher, "true",
             std_fds(stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr))
         self.job_controller.shell_to_foreground()
         self.assertEquals(self.job_controller.jobs.keys(), [])
@@ -362,7 +365,7 @@ class JobControlTests(unittest.TestCase):
     def test_foreground_job_is_stopped(self):
         self.job_controller.shell_to_foreground()
         shell.run_command(
-            self.job_controller, make_launcher(), "sh -c 'kill -STOP $$'",
+            self.job_controller, self.launcher, "sh -c 'kill -STOP $$'",
             std_fds(stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr))
         self.job_controller.shell_to_foreground()
         jobs = self.job_controller.jobs
@@ -380,7 +383,7 @@ class JobControlTests(unittest.TestCase):
     def test_backgrounding(self):
         jobs = self.job_controller.jobs
         shell.run_command(
-            self.job_controller, make_launcher(),
+            self.job_controller, self.launcher,
             "sh -c 'while true; do sleep 1s; done' &",
             std_fds(stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr))
         self.assertEquals(jobs.keys(), [1])
@@ -410,17 +413,53 @@ class JobControlTests(unittest.TestCase):
         self.assertEquals(jobs.keys(), [])
 
     def test_listing_jobs(self):
-        launcher = shell.LauncherWithBuiltins(
-            shell.Launcher(), self.job_controller.get_builtins())
         shell.run_command(
-            self.job_controller, launcher, "true &",
+            self.job_controller, self.launcher, "true &",
             std_fds(stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr))
         self.dispatcher.once(may_block=True)
         write_fh, read_fh = make_fh_pair()
         shell.run_command(
-            self.job_controller, launcher, "jobs",
+            self.job_controller, self.launcher, "jobs",
             std_fds(stdin=sys.stdin, stdout=write_fh, stderr=sys.stderr))
         self.assertEquals(read_fh.read(), "[1] Done\n")
+
+    def test_bg(self):
+        self.job_controller.shell_to_foreground()
+        write_fd, read_fd = make_fh_pair()
+        shell.run_command(
+            self.job_controller, self.launcher,
+            "sh -c 'echo start; kill -STOP $$; echo done'",
+            std_fds(stdin=sys.stdin, stdout=write_fd, stderr=sys.stderr))
+        self.assert_messages(["[1]+ Stopped\n"])
+        self.assertEquals(read_fd.read(), "start\n")
+
+        shell.run_command(
+            self.job_controller, self.launcher, "bg", 
+            std_fds(stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr))
+        self.dispatcher.once(may_block=True)
+        self.assertEquals(read_fd.read(), "done\n")
+        self.assert_messages(["[1]+ Done\n"])
+
+    def test_fg(self):
+        self.job_controller.shell_to_foreground()
+        write_fd, read_fd = make_fh_pair()
+        shell.run_command(
+            self.job_controller, self.launcher,
+            "sh -c 'echo start; kill -STOP $$; echo done'",
+            std_fds(stdin=sys.stdin, stdout=write_fd, stderr=sys.stderr))
+        self.assertEquals(read_fd.read(), "start\n")
+
+        shell.run_command(
+            self.job_controller, self.launcher, "fg", 
+            std_fds(stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr))
+        try:
+            os.waitpid(-1, os.WNOHANG | os.WUNTRACED)
+        except OSError, exn:
+            self.assertEquals(exn.errno, errno.ECHILD)
+        else:
+            self.fail("Expected ECHILD")
+        self.assertEquals(read_fd.read(), "done\n")
+        self.assert_messages([])
 
 
 if __name__ == "__main__":
