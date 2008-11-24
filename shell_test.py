@@ -181,6 +181,14 @@ class ShellTests(tempdir_test.TempDirTestCase):
         # but that is inconsistent with the fallback for "cd", which
         # is to give an error.
 
+    def test_tilde_unexpansion(self):
+        home_dir = "/my/home/town"
+        self.patch_env_var("HOME", home_dir)
+        self.assertEquals(shell.unexpanduser("/my/home/town/village/idiot"),
+                          "~/village/idiot")
+        self.assertEquals(shell.unexpanduser("/shelbyville"),
+                          "/shelbyville")
+
     def test_completion(self):
         temp_dir = self.make_temp_dir()
         os.mkdir(os.path.join(temp_dir, "a-dir"))

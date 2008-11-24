@@ -25,6 +25,7 @@ import os
 import pwd
 import readline
 import signal
+import socket
 import string
 import sys
 import traceback
@@ -335,6 +336,14 @@ def expanduser(path):
     return userhome + path[i:], reverse
 
 
+def unexpanduser(path):
+    if "HOME" in os.environ:
+        home = os.environ["HOME"]
+        if path == home or path.startswith(home + "/"):
+            return "~" + path[len(home):]
+    return path
+
+
 def readline_complete(string):
     filename, reverse_expansion = expanduser(string)
     for filename in sorted(glob.glob(filename + "*")):
@@ -386,6 +395,14 @@ class Shell(object):
         run_command(self.job_controller, self._launcher, line, fds)
 
 
+def get_prompt():
+    args = {"username": pwd.getpwuid(os.getuid()).pw_name,
+            "hostname": socket.gethostname(),
+            "cwd_path": unexpanduser(os.getcwd())}
+    format = u"%(username)s@%(hostname)s:%(cwd_path)s\N{CENT SIGN} "
+    return (format % args).encode("utf-8")
+
+
 def main():
     init_readline()
     shell = Shell()
@@ -395,9 +412,8 @@ def main():
     while True:
         shell.job_controller.shell_to_foreground()
         shell.job_controller.print_messages()
-        prompt = "$ "
         try:
-            line = raw_input(prompt)
+            line = raw_input(get_prompt())
         except EOFError:
             sys.stdout.write("\n")
             break
