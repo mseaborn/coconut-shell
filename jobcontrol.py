@@ -18,7 +18,6 @@
 
 import errno
 import os
-import subprocess
 import signal
 import sys
 
@@ -188,7 +187,7 @@ class JobController(object):
                 del self.jobs[job_id]
         self._state_changed.clear()
 
-    def _list_jobs(self, args, fds):
+    def _list_jobs(self, args, pgroup, fds):
         stdout = fds[1]
         state_map = {"running": "Running",
                      "stopped": "Stopped",
@@ -196,10 +195,10 @@ class JobController(object):
         for job_id, job in sorted(self.jobs.iteritems()):
             stdout.write("[%s] %s\n" % (job_id, state_map[job.state]))
 
-    def _bg_job(self, args, fds):
+    def _bg_job(self, args, pgroup, fds):
         self.jobs[max(self.jobs)].resume()
 
-    def _fg_job(self, args, fds):
+    def _fg_job(self, args, pgroup, fds):
         job_id = max(self.jobs)
         job = self.jobs[job_id]
         job.resume()

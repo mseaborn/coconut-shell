@@ -254,7 +254,17 @@ class Launcher(object):
         return pid
 
 
-def chdir_builtin(args, fds):
+class PrefixLauncher(object):
+
+    def __init__(self, prefix, launcher):
+        self._launcher = launcher
+        self._prefix = prefix
+
+    def spawn(self, args, pgroup, fds):
+        return self._launcher.spawn(self._prefix + args, pgroup, fds)
+
+
+def chdir_builtin(args, pgroup, fds):
     if len(args) == 0:
         # TODO: report nicer error when HOME is not set
         os.chdir(os.environ["HOME"])
@@ -271,8 +281,7 @@ class LauncherWithBuiltins(object):
 
     def spawn(self, args, pgroup, fds):
         if args[0] in self._builtins:
-            self._builtins[args[0]](args[1:], fds)
-            return None
+            return self._builtins[args[0]](args[1:], pgroup, fds)
         else:
             return self._launcher.spawn(args, pgroup, fds)
 
@@ -381,6 +390,12 @@ def init_readline():
 simple_builtins = {"cd": chdir_builtin}
 
 
+def wrap_sudo(as_root, user):
+    def sudo(args, pgroup, fds):
+        return as_root.spawn(args, pgroup, fds)
+    return {"sudo": sudo}, PrefixLauncher(["sudo", "-u", user], as_root)
+
+
 class Shell(object):
 
     def __init__(self):
@@ -389,7 +404,12 @@ class Shell(object):
         builtins = {}
         builtins.update(simple_builtins)
         builtins.update(self.job_controller.get_builtins())
-        self._launcher = LauncherWithBuiltins(Launcher(), builtins)
+        launcher = Launcher()
+        if "SUDO_UID" in os.environ and os.getuid() == 0:
+            sudo_builtins, launcher = wrap_sudo(
+                launcher, os.environ["SUDO_USER"])
+            builtins.update(sudo_builtins)
+        self._launcher = LauncherWithBuiltins(launcher, builtins)
 
     def run_command(self, line, fds):
         run_command(self.job_controller, self._launcher, line, fds)
