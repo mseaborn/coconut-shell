@@ -358,6 +358,32 @@ class JobControlTests(unittest.TestCase):
             shell.Launcher(), self.job_controller.get_builtins())
         self.assert_messages = assert_messages
 
+    def test_exit_status(self):
+        pid = os.fork()
+        if pid == 0:
+            os._exit(123)
+        got = []
+        self.dispatcher.add_handler(pid, got.append)
+        self.dispatcher.once(may_block=True)
+        self.assertEquals(len(got), 1)
+        self.assertTrue(os.WIFEXITED(got[0]))
+        self.assertEquals(os.WEXITSTATUS(got[0]), 123)
+
+    def test_stop_status(self):
+        pid = os.fork()
+        if pid == 0:
+            try:
+                os.kill(os.getpid(), signal.SIGSTOP)
+            finally:
+                os._exit(123)
+        got = []
+        self.dispatcher.add_handler(pid, got.append)
+        self.dispatcher.once(may_block=True)
+        os.kill(pid, signal.SIGKILL)
+        self.assertEquals(len(got), 1)
+        self.assertTrue(os.WIFSTOPPED(got[0]))
+        self.assertEquals(os.WSTOPSIG(got[0]), signal.SIGSTOP)
+
     def test_foreground(self):
         # Foregrounding is necessary to set signals otherwise we get
         # wedged by SIGTTOU.  TODO: tests should not be vulnerable to

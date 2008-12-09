@@ -20,38 +20,65 @@ import errno
 import os
 import signal
 import sys
+import threading
+
+import gobject
+
+
+def make_pipe():
+    read_fd, write_fd = os.pipe()
+    return os.fdopen(read_fd, "r", 0), os.fdopen(write_fd, "w", 0)
 
 
 class WaitDispatcher(object):
 
+    # glib currently does not support using WUNTRACED with waitpid()
+    # to get stopped statuses, so work around this by doing waitpid()
+    # inside threads.  We cannot use child_watch_add() at the same
+    # time because that causes glib to set the SA_NOCLDSTOP flag which
+    # stops WUNTRACED from working.
+    # See also <http://bugzilla.gnome.org/show_bug.cgi?id=562501>.
+
     def __init__(self):
-        self._by_pid = {}
+        self._queue = []
+        read_fd, self._write_fd = make_pipe()
+        def on_ready(*args):
+            read_fd.read(1)
+            while True:
+                try:
+                    func = self._queue.pop(0)
+                except IndexError:
+                    break
+                else:
+                    func()
+            return True
+        # Need to initialise threads otherwise pygobject won't drop
+        # the Python GIL while doing an iteration of the glib loop.
+        gobject.threads_init()
+        gobject.io_add_watch(read_fd.fileno(), gobject.IO_IN, on_ready)
 
     def add_handler(self, pid, callback):
         assert isinstance(pid, int), pid
-        self._by_pid[pid] = callback
+        def enqueue_status(status):
+            self._queue.append(lambda: callback(status))
+            self._write_fd.write("x")
+        def in_thread():
+            while True:
+                pid2, status = os.waitpid(pid, os.WUNTRACED)
+                enqueue_status(status)
+                if not os.WIFSTOPPED(status):
+                    break
+        thread = threading.Thread(target=in_thread)
+        thread.setDaemon(True)
+        thread.start()
 
     def once(self, may_block):
-        flags = 0
-        if not may_block:
-            flags |= os.WNOHANG
-        pid, status = os.waitpid(-1, flags | os.WUNTRACED)
-        if pid in self._by_pid:
-            self._by_pid[pid](status)
-            if not os.WIFSTOPPED(status):
-                del self._by_pid[pid]
-        return pid != 0
+        gobject.main_context_default().iteration(may_block)
 
     def read_pending(self):
         while True:
-            try:
-                if not self.once(may_block=False):
-                    break
-            except OSError, exn:
-                if exn.errno == errno.ECHILD:
-                    break
-                else:
-                    raise
+            if not self.once(may_block=False):
+                break
 
 
 class ChildProcess(object):
