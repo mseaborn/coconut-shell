@@ -1,20 +1,24 @@
 
 - nicer errors (from parser and for "command not found")
-- fd redirection
 - save history
-- backgrounding
-- job control
-- signal safe (don't die on ctrl-c)
-- prompts
-- ~ expansion
 - {a,b} expansion, a kind of globbing
 - report non-zero status codes
 - within-argument quotes, e.g. --foo="bar"
 - $-variable expansion (do we want this?)
 - symlink-aware cwd with "cd .."
+- "help" command
 
 Done:
 - pipelines
 - filename completion
 - globbing
 - cd
+- signal safe (don't die on ctrl-c)
+  - disabled SIGINT.  not ideal: this won't cancel the current readline
+- job control
+- backgrounding
+- ~ expansion
+- fd redirection
+  - some redirection syntaxes remain to be done
+- prompts
+  - but not configurable
