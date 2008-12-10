@@ -170,9 +170,10 @@ class JobController(object):
         self._output = output
         self._state_changed = set()
         self.jobs = {}
+        self._tty_fd = sys.stdout
 
     def create_job(self, is_foreground):
-        launcher = ProcessGroup(is_foreground, tty_fd=sys.stdout)
+        launcher = ProcessGroup(is_foreground, tty_fd=self._tty_fd)
 
         def add_job(procs):
             if len(procs) == 0:
@@ -202,7 +203,7 @@ class JobController(object):
         # The shell should never accidentally stop itself.
         signal.signal(signal.SIGTTIN, signal.SIG_IGN)
         signal.signal(signal.SIGTTOU, signal.SIG_IGN)
-        os.tcsetpgrp(sys.stdout.fileno(), os.getpgrp())
+        os.tcsetpgrp(self._tty_fd.fileno(), os.getpgrp())
 
     def print_messages(self):
         self._dispatcher.read_pending()
@@ -228,6 +229,7 @@ class JobController(object):
     def _fg_job(self, args, pgroup, fds):
         job_id = max(self.jobs)
         job = self.jobs[job_id]
+        os.tcsetpgrp(self._tty_fd.fileno(), job.pgid)
         job.resume()
         self._wait_for_job(job_id, job)
 
