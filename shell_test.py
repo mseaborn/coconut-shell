@@ -398,27 +398,28 @@ class JobControlTests(unittest.TestCase):
 
     def test_foreground_job_is_stopped(self):
         self.job_controller.shell_to_foreground()
+        command = "sh -c 'kill -STOP $$'"
         shell.run_command(
-            self.job_controller, self.launcher, "sh -c 'kill -STOP $$'",
+            self.job_controller, self.launcher, command,
             std_fds(stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr))
         self.job_controller.shell_to_foreground()
         jobs = self.job_controller.jobs
         self.assertEquals(jobs.keys(), [1])
         job = jobs[1]
         try:
-            self.assert_messages(["[1]+ Stopped\n"])
+            self.assert_messages(["[1]+ Stopped  %s\n" % command])
         finally:
             job.resume()
         self.dispatcher.once(may_block=True)
         self.assertEquals(job.state, "finished")
-        self.assert_messages(["[1]+ Done\n"])
+        self.assert_messages(["[1]+ Done  %s\n" % command])
         self.assertEquals(jobs.keys(), [])
 
     def test_backgrounding(self):
         jobs = self.job_controller.jobs
+        command = "sh -c 'while true; do sleep 1s; done' &"
         shell.run_command(
-            self.job_controller, self.launcher,
-            "sh -c 'while true; do sleep 1s; done' &",
+            self.job_controller, self.launcher, command,
             std_fds(stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr))
         self.assertEquals(jobs.keys(), [1])
         job = jobs[1]
@@ -429,7 +430,7 @@ class JobControlTests(unittest.TestCase):
             # Signal delivery is apparently not immediate so we need to block.
             self.dispatcher.once(may_block=True)
             self.assertEquals(job.state, "stopped")
-            self.assert_messages(["[1]+ Stopped\n"])
+            self.assert_messages(["[1]+ Stopped  %s\n" % command])
 
             # Check that the wait status handlers work a second time.
             job.resume()
@@ -438,12 +439,12 @@ class JobControlTests(unittest.TestCase):
             job.send_signal(signal.SIGSTOP)
             self.dispatcher.once(may_block=True)
             self.assertEquals(job.state, "stopped")
-            self.assert_messages(["[1]+ Stopped\n"])
+            self.assert_messages(["[1]+ Stopped  %s\n" % command])
         finally:
             job.send_signal(signal.SIGKILL)
         self.dispatcher.once(may_block=True)
         self.assertEquals(job.state, "finished")
-        self.assert_messages(["[1]+ Done\n"])
+        self.assert_messages(["[1]+ Done  %s\n" % command])
         self.assertEquals(jobs.keys(), [])
 
     def test_listing_jobs(self):
@@ -455,16 +456,16 @@ class JobControlTests(unittest.TestCase):
         shell.run_command(
             self.job_controller, self.launcher, "jobs",
             std_fds(stdin=sys.stdin, stdout=write_fh, stderr=sys.stderr))
-        self.assertEquals(read_fh.read(), "[1] Done\n")
+        self.assertEquals(read_fh.read(), "[1] Done  true &\n")
 
     def test_bg(self):
         self.job_controller.shell_to_foreground()
         write_fd, read_fd = make_fh_pair()
+        command = "sh -c 'echo start; kill -STOP $$; echo done'"
         shell.run_command(
-            self.job_controller, self.launcher,
-            "sh -c 'echo start; kill -STOP $$; echo done'",
+            self.job_controller, self.launcher, command,
             std_fds(stdin=sys.stdin, stdout=write_fd, stderr=sys.stderr))
-        self.assert_messages(["[1]+ Stopped\n"])
+        self.assert_messages(["[1]+ Stopped  %s\n" % command])
         self.assertEquals(read_fd.read(), "start\n")
 
         shell.run_command(
@@ -472,7 +473,7 @@ class JobControlTests(unittest.TestCase):
             std_fds(stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr))
         self.dispatcher.once(may_block=True)
         self.assertEquals(read_fd.read(), "done\n")
-        self.assert_messages(["[1]+ Done\n"])
+        self.assert_messages(["[1]+ Done  %s\n" % command])
 
     def test_fg(self):
         self.job_controller.shell_to_foreground()

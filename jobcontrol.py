@@ -96,10 +96,11 @@ class ChildProcess(object):
 
 class Job(object):
 
-    def __init__(self, dispatcher, procs, pgid, on_state_change):
+    def __init__(self, dispatcher, procs, pgid, on_state_change, cmd_text):
         self.procs = [ChildProcess(proc) for proc in procs]
         self.pgid = pgid
         self.state = "running"
+        self.cmd_text = cmd_text
         for proc in self.procs:
             self._add_handler(dispatcher, proc, on_state_change)
 
@@ -163,6 +164,11 @@ class ProcessGroup(object):
         return self._pgid
 
 
+state_map = {"running": "Running",
+             "stopped": "Stopped",
+             "finished": "Done"}
+
+
 class JobController(object):
 
     def __init__(self, dispatcher, output):
@@ -172,7 +178,7 @@ class JobController(object):
         self.jobs = {}
         self._tty_fd = sys.stdout
 
-    def create_job(self, is_foreground):
+    def create_job(self, is_foreground, cmd_text):
         launcher = ProcessGroup(is_foreground, tty_fd=self._tty_fd)
 
         def add_job(procs):
@@ -182,7 +188,7 @@ class JobController(object):
                 self._state_changed.add((job_id, job))
             job_id = max([0] + self.jobs.keys()) + 1
             job = Job(self._dispatcher, procs, launcher.get_pgid(),
-                      on_state_change)
+                      on_state_change, cmd_text)
             self.jobs[job_id] = job
             if is_foreground:
                 self._wait_for_job(job_id, job)
@@ -205,23 +211,25 @@ class JobController(object):
         signal.signal(signal.SIGTTOU, signal.SIG_IGN)
         os.tcsetpgrp(self._tty_fd.fileno(), os.getpgrp())
 
+    def _job_status_change(self, job_id, job):
+        self._output.write("[%s]+ %s  %s\n" % (job_id, state_map[job.state],
+                                               job.cmd_text))
+
     def print_messages(self):
         self._dispatcher.read_pending()
         for job_id, job in sorted(self._state_changed):
             if job.state == "stopped":
-                self._output.write("[%s]+ Stopped\n" % job_id)
+                self._job_status_change(job_id, job)
             elif job.state == "finished":
-                self._output.write("[%s]+ Done\n" % job_id)
+                self._job_status_change(job_id, job)
                 del self.jobs[job_id]
         self._state_changed.clear()
 
     def _list_jobs(self, args, pgroup, fds):
         stdout = fds[1]
-        state_map = {"running": "Running",
-                     "stopped": "Stopped",
-                     "finished": "Done"}
         for job_id, job in sorted(self.jobs.iteritems()):
-            stdout.write("[%s] %s\n" % (job_id, state_map[job.state]))
+            stdout.write("[%s] %s  %s\n" % (job_id, state_map[job.state],
+                                            job.cmd_text))
 
     def _bg_job(self, args, pgroup, fds):
         self.jobs[max(self.jobs)].resume()

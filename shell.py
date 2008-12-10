@@ -135,12 +135,14 @@ class PipelineExp(object):
 
 class JobExp(object):
 
-    def __init__(self, cmd, is_foreground):
+    def __init__(self, cmd, is_foreground, cmd_text):
         self._cmd = cmd
         self._is_foreground = is_foreground
+        self._cmd_text = cmd_text
 
     def run(self, job_controller, launcher, fds):
-        pgroup, add_job = job_controller.create_job(self._is_foreground)
+        pgroup, add_job = job_controller.create_job(self._is_foreground,
+                                                    self._cmd_text)
         procs = self._cmd.run(launcher, pgroup, fds)
         add_job(procs)
 
@@ -192,7 +194,8 @@ job_expr = (pipeline +
             parse.Optional(parse.Literal("&").
                            setParseAction(lambda text, loc, cmds: False),
                            True)) \
-           .setParseAction(lambda text, loc, args: JobExp(*args))
+           .setParseAction(lambda text, loc, (cmd, is_foreground):
+                               JobExp(cmd, is_foreground, text))
 
 top_command = parse.Optional(job_expr)
 
@@ -295,7 +298,7 @@ class NullProcessGroup(object):
 
 class NullJobController(object):
 
-    def create_job(self, is_foreground):
+    def create_job(self, is_foreground, cmd_text):
         def add_job(procs):
             if is_foreground:
                 for proc in procs:
