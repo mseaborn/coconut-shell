@@ -46,6 +46,7 @@ def set_up_signals():
     # child processes.  I am surprised this does not cause problems
     # more often.  Change the setting back.
     signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
 
 
 class StringArgument(object):
@@ -429,6 +430,7 @@ def main():
     fds = {FILENO_STDIN: sys.stdin,
            FILENO_STDOUT: sys.stdout,
            FILENO_STDERR: sys.stderr}
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
     while True:
         shell.job_controller.shell_to_foreground()
         shell.job_controller.print_messages()
