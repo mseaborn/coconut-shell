@@ -231,12 +231,21 @@ class JobController(object):
             stdout.write("[%s] %s  %s\n" % (job_id, state_map[job.state],
                                             job.cmd_text))
 
+    def _job_from_args(self, args):
+        if len(args) == 0:
+            job_id = max(self.jobs)
+        elif len(args) == 1:
+            job_id = int(args[0])
+        else:
+            raise Exception("Too many arguments")
+        return job_id, self.jobs[job_id]
+
     def _bg_job(self, args, pgroup, fds):
-        self.jobs[max(self.jobs)].resume()
+        job_id, job = self._job_from_args(args)
+        job.resume()
 
     def _fg_job(self, args, pgroup, fds):
-        job_id = max(self.jobs)
-        job = self.jobs[job_id]
+        job_id, job = self._job_from_args(args)
         os.tcsetpgrp(self._tty_fd.fileno(), job.pgid)
         job.resume()
         self._wait_for_job(job_id, job)
