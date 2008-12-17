@@ -31,6 +31,9 @@ import sys
 import traceback
 
 import pyparsing as parse
+import pyrepl.completing_reader
+import pyrepl.historical_reader
+import pyrepl.unix_console
 
 import jobcontrol
 
@@ -423,8 +426,26 @@ def get_prompt():
     args = {"username": pwd.getpwuid(os.getuid()).pw_name,
             "hostname": socket.gethostname(),
             "cwd_path": unexpanduser(os.getcwd())}
-    format = u"%(username)s@%(hostname)s:%(cwd_path)s\N{CENT SIGN} "
+    format = u"%(username)s@%(hostname)s:%(cwd_path)s$$ "
     return (format % args).encode("utf-8")
+
+
+class Reader(pyrepl.historical_reader.HistoricalReader,
+             pyrepl.completing_reader.CompletingReader):
+
+    def get_prompt(self, lineno, cursor_on_line):
+        return get_prompt()
+
+    def get_stem(self):
+        buffer = "".join(self.buffer)
+        index = buffer.rfind(" ", 0, self.pos)
+        if index == -1:
+            return buffer[:self.pos]
+        else:
+            return buffer[index+1:self.pos]
+
+    def get_completions(self, stem):
+        return list(readline_complete(stem))
 
 
 def main():
@@ -434,11 +455,12 @@ def main():
            FILENO_STDOUT: sys.stdout,
            FILENO_STDERR: sys.stderr}
     signal.signal(signal.SIGINT, signal.SIG_IGN)
+    reader = Reader(pyrepl.unix_console.UnixConsole())
     while True:
         shell.job_controller.shell_to_foreground()
         shell.job_controller.print_messages()
         try:
-            line = raw_input(get_prompt())
+            line = reader.readline()
         except EOFError:
             sys.stdout.write("\n")
             break
