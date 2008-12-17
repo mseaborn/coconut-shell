@@ -7,6 +7,7 @@
 - $-variable expansion (do we want this?)
 - symlink-aware cwd with "cd .."
 - "help" command
+- setting environment variables via "foo=bar command"
 
 Done:
 - pipelines
