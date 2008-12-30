@@ -16,6 +16,8 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
 # 02110-1301 USA.
 
+import gobject
+
 import pyrepl.completing_reader
 import pyrepl.historical_reader
 import pyrepl.unix_console
@@ -42,6 +44,27 @@ class Reader(pyrepl.historical_reader.HistoricalReader,
 
     def get_completions(self, stem):
         return list(self._completer(stem))
+
+    def readline(self):
+        self.prepare()
+        try:
+            loop = gobject.MainLoop()
+            def on_avail(*args):
+                try:
+                    self.handle1()
+                except EOFError:
+                    loop.quit()
+                    return False
+                if self.finished:
+                    loop.quit()
+                    return False
+                return True
+            gobject.io_add_watch(1, gobject.IO_IN, on_avail)
+            self.refresh()
+            loop.run()
+            return self.get_buffer()
+        finally:
+            self.restore()
 
 
 def make_reader(get_prompt, completer):
