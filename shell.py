@@ -412,7 +412,7 @@ class Shell(object):
         builtins.update(simple_builtins)
         builtins.update(self.job_controller.get_builtins())
         launcher = Launcher()
-        if "SUDO_UID" in os.environ and os.getuid() == 0:
+        if "SUDO_USER" in os.environ and os.getuid() == 0:
             sudo_builtins, launcher = wrap_sudo(
                 launcher, os.environ["SUDO_USER"])
             builtins.update(sudo_builtins)
