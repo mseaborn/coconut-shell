@@ -189,6 +189,40 @@ class ShellTests(tempdir_test.TempDirTestCase):
         self.assertEquals(shell.unexpanduser("/shelbyville"),
                           "/shelbyville")
 
+    def test_get_logical_cwd(self):
+        temp_dir = self.make_temp_dir()
+        os.mkdir(os.path.join(temp_dir, "realdir"))
+        os.symlink("realdir", os.path.join(temp_dir, "symlink"))
+        physical_path = os.path.join(temp_dir, "realdir")
+        logical_path = os.path.join(temp_dir, "symlink")
+        shell.chdir_logical(logical_path)
+        self.assertEquals(shell.get_logical_cwd(), logical_path)
+        # Should also work when PWD is unset, pointing to the wrong
+        # directory, or pointing to a nonexistent path.
+        del os.environ["PWD"]
+        self.assertEquals(shell.get_logical_cwd(), physical_path)
+        os.environ["PWD"] = "/"
+        self.assertEquals(shell.get_logical_cwd(), physical_path)
+        os.environ["PWD"] = "/does/not/exist"
+        self.assertEquals(shell.get_logical_cwd(), physical_path)
+
+    def test_chdir_to_parent(self):
+        dir_path1 = self.make_temp_dir()
+        dir_path2 = os.path.join(dir_path1, "dir2")
+        os.mkdir(dir_path2)
+        shell.chdir_logical(dir_path2 + "/")
+        self.assertEquals(shell.get_logical_cwd(), dir_path2)
+        shell.chdir_logical("..")
+        self.assertEquals(shell.get_logical_cwd(), dir_path1)
+
+    def test_get_prompt_in_deleted_directory(self):
+        temp_dir = self.make_temp_dir()
+        path = os.path.join(temp_dir, "dir2")
+        os.mkdir(path)
+        os.chdir(path)
+        os.rmdir(path)
+        shell.get_prompt()
+
     def test_completion(self):
         temp_dir = self.make_temp_dir()
         os.mkdir(os.path.join(temp_dir, "a-dir"))

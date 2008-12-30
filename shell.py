@@ -271,10 +271,10 @@ class PrefixLauncher(object):
 def chdir_builtin(args, pgroup, fds):
     if len(args) == 0:
         # TODO: report nicer error when HOME is not set
-        os.chdir(os.environ["HOME"])
+        chdir_logical(os.environ["HOME"])
     else:
         for arg in args:
-            os.chdir(arg)
+            chdir_logical(arg)
 
 
 class LauncherWithBuiltins(object):
@@ -357,6 +357,34 @@ def unexpanduser(path):
     return path
 
 
+# Bash uses PWD to remember the cwd pathname before symlink expansion.
+def chdir_logical(path):
+    if os.path.isabs(path):
+        new_cwd = path
+    else:
+        new_cwd = os.path.join(get_logical_cwd(), path)
+    # Note that ".." is applied after symlink expansion.  We don't
+    # attempt to follow Bash's behaviour here.
+    os.chdir(path)
+    # Only set this if chdir() succeeds.
+    os.environ["PWD"] = os.path.normpath(new_cwd)
+
+
+def get_logical_cwd():
+    path = os.environ.get("PWD")
+    if path is not None:
+        try:
+            stat1 = os.stat(path)
+            stat2 = os.stat(".")
+        except OSError:
+            pass
+        else:
+            if (stat1.st_dev == stat2.st_dev and
+                stat1.st_ino == stat2.st_ino):
+                return path
+    return os.getcwd()
+
+
 def readline_complete(string):
     filename, reverse_expansion = expanduser(string)
     for filename in sorted(glob.glob(filename + "*")):
@@ -420,9 +448,13 @@ class Shell(object):
 
 
 def get_prompt():
+    try:
+        cwd_path = unexpanduser(get_logical_cwd())
+    except:
+        cwd_path = "?"
     args = {"username": pwd.getpwuid(os.getuid()).pw_name,
             "hostname": socket.gethostname(),
-            "cwd_path": unexpanduser(os.getcwd())}
+            "cwd_path": cwd_path}
     format = u"%(username)s@%(hostname)s:%(cwd_path)s$$ "
     return (format % args).encode("utf-8")
 
