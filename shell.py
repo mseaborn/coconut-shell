@@ -30,6 +30,7 @@ import string
 import sys
 import traceback
 
+import gobject
 import pyparsing as parse
 
 import jobcontrol
@@ -461,8 +462,13 @@ def get_prompt():
 
 class ReadlineReader(object):
 
-    def readline(self):
-        return raw_input(get_prompt())
+    def readline(self, callback):
+        try:
+            line = raw_input(get_prompt())
+        except EOFError:
+            callback(None)
+        else:
+            callback(line)
 
 
 def main():
@@ -479,18 +485,27 @@ def main():
     except ImportError:
         reader = ReadlineReader()
         print "using readline (pyrepl not available)"
-    while True:
+    should_run = [True]
+
+    def read_input():
         shell.job_controller.shell_to_foreground()
         shell.job_controller.print_messages()
-        try:
-            line = reader.readline()
-        except EOFError:
+        reader.readline(process_input)
+
+    def process_input(line):
+        if line is None:
             sys.stdout.write("\n")
-            break
-        try:
-            shell.run_command(line, fds)
-        except Exception:
-            traceback.print_exc()
+            should_run[0] = False
+        else:
+            try:
+                shell.run_command(line, fds)
+            except Exception:
+                traceback.print_exc()
+            read_input()
+
+    read_input()
+    while should_run[0]:
+        gobject.main_context_default().iteration()
 
 
 if __name__ == "__main__":

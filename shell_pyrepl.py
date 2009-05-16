@@ -45,29 +45,23 @@ class Reader(pyrepl.historical_reader.HistoricalReader,
     def get_completions(self, stem):
         return list(self._completer(stem))
 
-    def readline(self):
-        self.prepare()
-        try:
-            loop = gobject.MainLoop()
-            def on_avail(*args):
-                try:
-                    self.handle1()
-                except EOFError:
-                    loop.quit()
-                    return False
-                if self.finished:
-                    loop.quit()
-                    return False
-                return True
-            gobject.io_add_watch(1, gobject.IO_IN, on_avail)
-            self.refresh()
-            loop.run()
+    def readline(self, callback):
+        def on_avail(*args):
+            try:
+                self.handle1()
+            except EOFError:
+                self.restore()
+                callback(None)
+                return False
             if self.finished:
-                return self.get_buffer()
-            else:
-                raise EOFError()
-        finally:
-            self.restore()
+                self.restore()
+                callback(self.get_buffer())
+                return False
+            return True
+
+        self.prepare()
+        gobject.io_add_watch(1, gobject.IO_IN, on_avail)
+        self.refresh()
 
 
 def make_reader(get_prompt, completer):
