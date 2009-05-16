@@ -62,7 +62,10 @@ class Reader(pyrepl.historical_reader.HistoricalReader,
             gobject.io_add_watch(1, gobject.IO_IN, on_avail)
             self.refresh()
             loop.run()
-            return self.get_buffer()
+            if self.finished:
+                return self.get_buffer()
+            else:
+                raise EOFError()
         finally:
             self.restore()
 
