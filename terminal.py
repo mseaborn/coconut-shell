@@ -56,6 +56,15 @@ class VTEConsole(pyrepl.unix_console.UnixConsole):
         del self._UnixConsole__buffer[:]
 
 
+class JobMessageOutput(object):
+
+    def __init__(self, terminal):
+        self._terminal = terminal
+
+    def write(self, data):
+        self._terminal.feed(data.replace("\n", "\n\r"))
+
+
 def forward_output_to_terminal(master_fd, terminal):
     def on_avail(*args):
         try:
@@ -78,7 +87,7 @@ class Terminal(object):
         self._reader = shell_pyrepl.Reader(
             shell.get_prompt, shell.readline_complete, self._console)
         self._current_reader = None
-        self._shell = shell.Shell()
+        self._shell = shell.Shell(JobMessageOutput(self._terminal))
         self._read_input()
 
         self._terminal.connect("commit", self._on_user_input)
@@ -93,6 +102,7 @@ class Terminal(object):
 
     def _read_input(self):
         self._shell.job_controller.shell_to_foreground()
+        self._shell.job_controller.print_messages()
         self._reader.prepare()
         self._reader.refresh()
         self._current_reader = self._on_readline_input

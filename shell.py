@@ -431,9 +431,9 @@ def wrap_sudo(as_root, user):
 
 class Shell(object):
 
-    def __init__(self):
+    def __init__(self, output):
         self.job_controller = jobcontrol.JobController(
-            jobcontrol.WaitDispatcher(), sys.stdout)
+            jobcontrol.WaitDispatcher(), output)
         builtins = {}
         builtins.update(simple_builtins)
         builtins.update(self.job_controller.get_builtins())
@@ -473,7 +473,7 @@ class ReadlineReader(object):
 
 def main():
     init_readline()
-    shell = Shell()
+    shell = Shell(sys.stdout)
     fds = {FILENO_STDIN: sys.stdin,
            FILENO_STDOUT: sys.stdout,
            FILENO_STDERR: sys.stderr}
