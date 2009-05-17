@@ -84,7 +84,10 @@ class Terminal(object):
                 self._reader.input_trans.push(event)
                 cmd = self._reader.input_trans.get()
                 if cmd is not None:
-                    self._reader.do_cmd(cmd)
+                    try:
+                        self._reader.do_cmd(cmd)
+                    except EOFError:
+                        self._exit()
         if self._reader.finished:
             self._reading_line = False
             self._reader.restore()
@@ -97,6 +100,9 @@ class Terminal(object):
         except Exception:
             traceback.print_exc()
         self._read_input()
+
+    def _exit(self):
+        gtk.main_quit()
 
 
 def main():
