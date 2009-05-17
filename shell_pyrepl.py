@@ -45,6 +45,10 @@ class Reader(pyrepl.historical_reader.HistoricalReader,
     def get_completions(self, stem):
         return list(self._completer(stem))
 
+    def clear_error(self):
+        self.msg = ""
+        self.dirty = True
+
     def readline(self, callback):
         def on_avail(*args):
             try:

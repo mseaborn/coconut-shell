@@ -106,6 +106,7 @@ class Terminal(object):
         for key in data:
             self._console.event_queue.push(key)
         while not self._console.event_queue.empty():
+            self._reader.clear_error()
             event = self._console.event_queue.get()
             if event is not None:
                 self._reader.input_trans.push(event)
