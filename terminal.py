@@ -94,10 +94,14 @@ class Terminal(object):
         scrollbar = gtk.VScrollbar()
         scrollbar.set_adjustment(self._terminal.get_adjustment())
         hbox = gtk.HBox()
-        hbox.add(self._terminal)
-        hbox.add(scrollbar)
+        hbox.pack_start(self._terminal, expand=True, fill=True)
+        hbox.pack_start(scrollbar, expand=False)
         window = gtk.Window()
         window.add(hbox)
+        window.set_geometry_hints(self._terminal, 0, 0, -1, -1, 0, 0,
+                                  self._terminal.get_char_width(),
+                                  self._terminal.get_char_height(),
+                                  -1, -1)
         window.show_all()
 
     def _read_input(self):
