@@ -19,6 +19,8 @@
 # Integrated terminal GUI and shell.
 
 import os
+import fcntl
+import struct
 import traceback
 
 import gobject
@@ -77,6 +79,11 @@ def forward_output_to_terminal(master_fd, terminal):
     gobject.io_add_watch(
         master_fd.fileno(), gobject.IO_IN | gobject.IO_HUP | gobject.IO_NVAL,
         on_avail)
+
+
+def set_terminal_size(tty_fd, width, height):
+    fcntl.ioctl(tty_fd, termios.TIOCSWINSZ,
+                struct.pack("HHHH", height, width, 0, 0))
 
 
 # Tango theme, from gnome-terminal's terminal-profile.c.
@@ -161,6 +168,8 @@ class Terminal(object):
 
     def _process_input(self, line):
         master_fd, slave_fd = openpty()
+        set_terminal_size(slave_fd, self._terminal.get_column_count(),
+                          self._terminal.get_row_count())
         forward_output_to_terminal(master_fd, self._terminal)
         def on_input(data):
             os.write(master_fd.fileno(), data)
