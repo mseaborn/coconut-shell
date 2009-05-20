@@ -79,6 +79,27 @@ def forward_output_to_terminal(master_fd, terminal):
         on_avail)
 
 
+# Tango theme, from gnome-terminal's terminal-profile.c.
+colours = [
+    (0x2e2e, 0x3434, 0x3636),
+    (0xcccc, 0x0000, 0x0000),
+    (0x4e4e, 0x9a9a, 0x0606),
+    (0xc4c4, 0xa0a0, 0x0000),
+    (0x3434, 0x6565, 0xa4a4),
+    (0x7575, 0x5050, 0x7b7b),
+    (0x0606, 0x9820, 0x9a9a),
+    (0xd3d3, 0xd7d7, 0xcfcf),
+    (0x5555, 0x5757, 0x5353),
+    (0xefef, 0x2929, 0x2929),
+    (0x8a8a, 0xe2e2, 0x3434),
+    (0xfcfc, 0xe9e9, 0x4f4f),
+    (0x7272, 0x9f9f, 0xcfcf),
+    (0xadad, 0x7f7f, 0xa8a8),
+    (0x3434, 0xe2e2, 0xe2e2),
+    (0xeeee, 0xeeee, 0xecec),
+    ]
+
+
 class Terminal(object):
 
     def __init__(self):
@@ -102,6 +123,10 @@ class Terminal(object):
                                   self._terminal.get_char_width(),
                                   self._terminal.get_char_height(),
                                   -1, -1)
+        foreground = gtk.gdk.Color(0, 0, 0)
+        background = gtk.gdk.Color(0xffff, 0xffff, 0xffff)
+        palette = [gtk.gdk.Color(*colour) for colour in colours]
+        self._terminal.set_colors(foreground, background, palette)
         window.show_all()
 
     def _read_input(self):
