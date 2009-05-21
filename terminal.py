@@ -107,10 +107,16 @@ colours = [
     ]
 
 
+# Constants apparently missing from Python bindings.
+VTE_ERASE_ASCII_BACKSPACE = 1
+
+
 class TerminalWidget(object):
 
     def __init__(self):
         self._terminal = vte.Terminal()
+        # set_pty() seems to set up backspace, but we're not using it.
+        self._terminal.set_backspace_binding(VTE_ERASE_ASCII_BACKSPACE)
         self._console = VTEConsole(self._terminal)
         self._reader = shell_pyrepl.Reader(
             shell.get_prompt, shell.readline_complete, self._console)
