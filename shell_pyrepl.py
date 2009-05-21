@@ -38,12 +38,14 @@ class Reader(pyrepl.historical_reader.HistoricalReader,
         buffer = "".join(self.buffer)
         index = buffer.rfind(" ", 0, self.pos)
         if index == -1:
+            self._completion_context = ""
             return buffer[:self.pos]
         else:
+            self._completion_context = buffer[:index+1]
             return buffer[index+1:self.pos]
 
     def get_completions(self, stem):
-        return list(self._completer(stem))
+        return list(self._completer(self._completion_context, stem))
 
     def clear_error(self):
         self.msg = ""

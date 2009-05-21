@@ -229,7 +229,7 @@ class ShellTests(tempdir_test.TempDirTestCase):
         os.mkdir(os.path.join(temp_dir, "b-dir"))
         write_file(os.path.join(temp_dir, "a-file"), "")
         os.chdir(temp_dir)
-        self.assertEquals(list(shell.readline_complete("a-")),
+        self.assertEquals(list(shell.complete_filename("a-")),
                           ["a-dir/", "a-file"])
 
     def test_completion_with_tilde_expansion(self):
@@ -239,8 +239,32 @@ class ShellTests(tempdir_test.TempDirTestCase):
         os.mkdir(os.path.join(home_dir, "b-dir"))
         # Recent versions of Bash expand out ~ when doing completion,
         # but we leave the ~ in place, which I prefer.
-        self.assertEquals(list(shell.readline_complete("~/a-")),
+        self.assertEquals(list(shell.complete_filename("~/a-")),
                           ["~/a-dir/"])
+
+    def test_completion_of_command_names(self):
+        bin_dir1 = self.make_temp_dir()
+        bin_dir2 = self.make_temp_dir()
+        path = ":".join([bin_dir1, bin_dir2])
+        write_file(os.path.join(bin_dir1, "program1"), "")
+        write_file(os.path.join(bin_dir2, "program2"), "")
+        os.symlink("does-not-exist", os.path.join(bin_dir1, "dangling-link"))
+        # Non-executable files are not listed.
+        self.assertEquals(list(shell.complete_path_command(path, "")), [])
+        os.chmod(os.path.join(bin_dir1, "program1"), 0555)
+        os.chmod(os.path.join(bin_dir2, "program2"), 0555)
+        self.assertEquals(list(shell.complete_path_command(path, "")),
+                          ["program1", "program2"])
+
+        self.patch_env_var("PATH", path)
+        # Both files and commands can be listed by completion.
+        current_dir = self.make_temp_dir()
+        write_file(os.path.join(current_dir, "file"), "")
+        os.chdir(current_dir)
+        self.assertEquals(list(shell.readline_complete("  ", "")),
+                          ["program1", "program2", "file"])
+        self.assertEquals(list(shell.readline_complete("cmd", "")),
+                          ["file"])
 
     def test_fds_not_leaked(self):
         data = self.command_output("ls /proc/self/fd")

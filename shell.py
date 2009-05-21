@@ -386,7 +386,26 @@ def get_logical_cwd():
     return os.getcwd()
 
 
-def readline_complete(string):
+def remove_prefix(prefix, string):
+    assert string.startswith(prefix)
+    return string[len(prefix):]
+
+
+def complete_path_command(path, prefix):
+    names = set()
+    for dir_path in path.split(":"):
+        for filename in glob.glob("%s/%s*" % (dir_path, prefix)):
+            try:
+                st = os.stat(filename)
+            except OSError:
+                pass
+            else:
+                if st.st_mode & 0111 != 0:
+                    names.add(remove_prefix(dir_path + "/", filename))
+    return sorted(names)
+
+
+def complete_filename(string):
     filename, reverse_expansion = expanduser(string)
     for filename in sorted(glob.glob(filename + "*")):
         if os.path.isdir(filename):
@@ -397,13 +416,22 @@ def readline_complete(string):
             yield reverse_expansion(filename)
 
 
+def readline_complete(context, string):
+    if context.strip() == "":
+        for filename in complete_path_command(os.environ["PATH"], string):
+            yield filename
+    for filename in complete_filename(string):
+        yield filename
+
+
 def readline_complete_wrapper(string, index):
     try:
         # readline has a weird interface to the completer.  We end up
         # recomputing the matches for each match, so it can take
         # O(n^2) time overall.  We could cache but it's not worth the
         # bother.
-        matches = list(readline_complete(string))
+        context = readline.get_line_buffer()[:readline.get_begidx()]
+        matches = list(readline_complete(context, string))
         if index < len(matches):
             return matches[index]
         else:
