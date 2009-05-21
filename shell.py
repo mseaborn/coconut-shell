@@ -99,17 +99,23 @@ class RedirectFile(object):
         fds[self._dest_fd] = open(self._filename, self._mode)
 
 
+def copy_spec(spec):
+    spec = spec.copy()
+    spec["fds"] = spec["fds"].copy()
+    return spec
+
+
 class CommandExp(object):
 
     def __init__(self, args):
         self._args = args
 
-    def run(self, launcher, pgroup, fds):
+    def run(self, launcher, spec):
         evaled_args = []
-        fds = fds.copy()
+        spec = copy_spec(spec)
         for arg in self._args:
-            arg.eval(evaled_args, fds)
-        proc = launcher.spawn(evaled_args, pgroup, fds)
+            arg.eval(evaled_args, spec["fds"])
+        proc = launcher.spawn(evaled_args, spec)
         if proc is None:
             return []
         else:
@@ -122,15 +128,15 @@ class PipelineExp(object):
         self._cmd1 = cmd1
         self._cmd2 = cmd2
 
-    def run(self, launcher, pgroup, fds):
+    def run(self, launcher, spec):
         pipe_read_fd, pipe_write_fd = os.pipe()
-        fds1 = fds.copy()
-        fds2 = fds.copy()
-        fds1[FILENO_STDOUT] = os.fdopen(pipe_write_fd, "w")
-        fds2[FILENO_STDIN] = os.fdopen(pipe_read_fd, "r")
+        spec1 = copy_spec(spec)
+        spec2 = copy_spec(spec)
+        spec1["fds"][FILENO_STDOUT] = os.fdopen(pipe_write_fd, "w")
+        spec2["fds"][FILENO_STDIN] = os.fdopen(pipe_read_fd, "r")
         procs = []
-        procs.extend(self._cmd1.run(launcher, pgroup, fds1))
-        procs.extend(self._cmd2.run(launcher, pgroup, fds2))
+        procs.extend(self._cmd1.run(launcher, spec1))
+        procs.extend(self._cmd2.run(launcher, spec2))
         return procs
 
 
@@ -141,10 +147,12 @@ class JobExp(object):
         self._is_foreground = is_foreground
         self._cmd_text = cmd_text
 
-    def run(self, job_controller, launcher, fds):
+    def run(self, job_controller, launcher, spec):
         pgroup, add_job = job_controller.create_job(self._is_foreground,
                                                     self._cmd_text)
-        procs = self._cmd.run(launcher, pgroup, fds)
+        spec = copy_spec(spec)
+        spec["pgroup"] = pgroup
+        procs = self._cmd.run(launcher, spec)
         add_job(procs)
 
 
@@ -238,7 +246,7 @@ def set_up_fds(fds):
 
 class Launcher(object):
 
-    def spawn(self, args, pgroup, fds):
+    def spawn(self, args, spec):
         def in_subprocess():
             try:
                 # Disable GC so that Python does not try to close FDs
@@ -246,8 +254,8 @@ class Launcher(object):
                 # failed: [Errno 9] Bad file descriptor" errors.
                 gc.disable()
                 set_up_signals()
-                pgroup.init_process(os.getpid())
-                set_up_fds(fds)
+                spec["pgroup"].init_process(os.getpid())
+                set_up_fds(spec["fds"])
                 try:
                     os.execvp(args[0], args)
                 except OSError:
@@ -255,7 +263,7 @@ class Launcher(object):
             except:
                 traceback.print_exc()
         pid = in_forked(in_subprocess)
-        pgroup.init_process(pid)
+        spec["pgroup"].init_process(pid)
         return pid
 
 
@@ -265,11 +273,11 @@ class PrefixLauncher(object):
         self._launcher = launcher
         self._prefix = prefix
 
-    def spawn(self, args, pgroup, fds):
-        return self._launcher.spawn(self._prefix + args, pgroup, fds)
+    def spawn(self, args, spec):
+        return self._launcher.spawn(self._prefix + args, spec)
 
 
-def chdir_builtin(args, pgroup, fds):
+def chdir_builtin(args, spec):
     if len(args) == 0:
         # TODO: report nicer error when HOME is not set
         chdir_logical(os.environ["HOME"])
@@ -284,11 +292,11 @@ class LauncherWithBuiltins(object):
         self._launcher = launcher
         self._builtins = builtins
 
-    def spawn(self, args, pgroup, fds):
+    def spawn(self, args, spec):
         if args[0] in self._builtins:
-            return self._builtins[args[0]](args[1:], pgroup, fds)
+            return self._builtins[args[0]](args[1:], spec)
         else:
-            return self._launcher.spawn(args, pgroup, fds)
+            return self._launcher.spawn(args, spec)
 
 
 class NullProcessGroup(object):
@@ -312,10 +320,10 @@ def get_one(lst):
     return lst[0]
 
 
-def run_command(job_controller, launcher, line, fds):
+def run_command(job_controller, launcher, line, spec):
     top_expr = top_command + parse.StringEnd()
     for cmd in top_expr.parseString(line):
-        procs = cmd.run(job_controller, launcher, fds)
+        procs = cmd.run(job_controller, launcher, spec)
 
 
 def path_starts_with(path1, path2):
@@ -452,8 +460,8 @@ simple_builtins = {"cd": chdir_builtin}
 
 
 def wrap_sudo(as_root, user):
-    def sudo(args, pgroup, fds):
-        return as_root.spawn(args, pgroup, fds)
+    def sudo(args, spec):
+        return as_root.spawn(args, spec)
     return {"sudo": sudo}, PrefixLauncher(["sudo", "-u", user], as_root)
 
 
@@ -473,7 +481,7 @@ class Shell(object):
         self._launcher = LauncherWithBuiltins(launcher, builtins)
 
     def run_command(self, line, fds):
-        run_command(self.job_controller, self._launcher, line, fds)
+        run_command(self.job_controller, self._launcher, line, {"fds": fds})
 
 
 def get_prompt():

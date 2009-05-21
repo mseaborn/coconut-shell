@@ -225,8 +225,8 @@ class JobController(object):
                 del self.jobs[job_id]
         self._state_changed.clear()
 
-    def _list_jobs(self, args, pgroup, fds):
-        stdout = fds[1]
+    def _list_jobs(self, args, spec):
+        stdout = spec["fds"][1]
         for job_id, job in sorted(self.jobs.iteritems()):
             stdout.write("[%s] %s  %s\n" % (job_id, state_map[job.state],
                                             job.cmd_text))
@@ -240,11 +240,11 @@ class JobController(object):
             raise Exception("Too many arguments")
         return job_id, self.jobs[job_id]
 
-    def _bg_job(self, args, pgroup, fds):
+    def _bg_job(self, args, fds):
         job_id, job = self._job_from_args(args)
         job.resume()
 
-    def _fg_job(self, args, pgroup, fds):
+    def _fg_job(self, args, fds):
         job_id, job = self._job_from_args(args)
         os.tcsetpgrp(self._tty_fd.fileno(), job.pgid)
         job.resume()
