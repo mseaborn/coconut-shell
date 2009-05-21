@@ -126,10 +126,17 @@ class Terminal(object):
         hbox.pack_start(scrollbar, expand=False)
         window = gtk.Window()
         window.add(hbox)
-        window.set_geometry_hints(self._terminal, 0, 0, -1, -1, 0, 0,
-                                  self._terminal.get_char_width(),
-                                  self._terminal.get_char_height(),
-                                  -1, -1)
+        pad_x, pad_y = self._terminal.get_padding()
+        char_x = self._terminal.get_char_width()
+        char_y = self._terminal.get_char_height()
+        window.set_geometry_hints(
+            self._terminal,
+            min_width=pad_x + char_x * 2,
+            min_height=pad_y + char_y * 2,
+            max_width=-1, max_height=-1,
+            base_width=pad_x, base_height=pad_y,
+            width_inc=char_x, height_inc=char_y,
+            min_aspect=-1, max_aspect=-1)
         foreground = gtk.gdk.Color(0, 0, 0)
         background = gtk.gdk.Color(0xffff, 0xffff, 0xffff)
         palette = [gtk.gdk.Color(*colour) for colour in colours]
