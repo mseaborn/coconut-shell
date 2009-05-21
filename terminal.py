@@ -107,7 +107,7 @@ colours = [
     ]
 
 
-class Terminal(object):
+class TerminalWidget(object):
 
     def __init__(self):
         self._terminal = vte.Terminal()
@@ -121,11 +121,16 @@ class Terminal(object):
         self._terminal.connect("commit", self._on_user_input)
         scrollbar = gtk.VScrollbar()
         scrollbar.set_adjustment(self._terminal.get_adjustment())
-        hbox = gtk.HBox()
-        hbox.pack_start(self._terminal, expand=True, fill=True)
-        hbox.pack_start(scrollbar, expand=False)
-        window = gtk.Window()
-        window.add(hbox)
+        self._hbox = gtk.HBox()
+        self._hbox.pack_start(self._terminal, expand=True, fill=True)
+        self._hbox.pack_start(scrollbar, expand=False)
+        foreground = gtk.gdk.Color(0, 0, 0)
+        background = gtk.gdk.Color(0xffff, 0xffff, 0xffff)
+        palette = [gtk.gdk.Color(*colour) for colour in colours]
+        self._terminal.set_colors(foreground, background, palette)
+        self._hbox.show_all()
+
+    def set_hints(self, window):
         pad_x, pad_y = self._terminal.get_padding()
         char_x = self._terminal.get_char_width()
         char_y = self._terminal.get_char_height()
@@ -137,11 +142,13 @@ class Terminal(object):
             base_width=pad_x, base_height=pad_y,
             width_inc=char_x, height_inc=char_y,
             min_aspect=-1, max_aspect=-1)
-        foreground = gtk.gdk.Color(0, 0, 0)
-        background = gtk.gdk.Color(0xffff, 0xffff, 0xffff)
-        palette = [gtk.gdk.Color(*colour) for colour in colours]
-        self._terminal.set_colors(foreground, background, palette)
-        window.show_all()
+        window.set_focus(self._terminal)
+
+    def get_widget(self):
+        return self._hbox
+
+    def get_terminal_widget(self):
+        return self._terminal
 
     def _read_input(self):
         self._shell.job_controller.shell_to_foreground()
@@ -193,8 +200,53 @@ class Terminal(object):
         gtk.main_quit()
 
 
+class TerminalWindow(object):
+
+    def __init__(self):
+        self._tabset = gtk.Notebook()
+        self._tabs = 0
+        self._window = gtk.Window()
+        self._window.add(self._tabset)
+        terminal = self._add_tab()
+        self._tabset.set_show_border(False)
+        self._tabset.show_all()
+        terminal.set_hints(self._window)
+
+        self._menu = gtk.Menu()
+        item = gtk.MenuItem("Open _Tab")
+        item.connect("activate", lambda *args: self._add_tab())
+        self._menu.add(item)
+        self._menu.show_all()
+        self._window.connect(
+            "popup_menu",
+            lambda widget: self._menu.popup(None, None, None, 0, 0))
+
+    def _menu_click(self, widget_unused, event):
+        if event.button == 3:
+            self._menu.popup(None, None, None, event.button, event.time)
+            return True
+        return False
+
+    def _add_tab(self):
+        self._tabs += 1
+        self._tabset.set_show_tabs(self._tabs > 1)
+        terminal = TerminalWidget()
+        index = self._tabset.append_page(terminal.get_widget(),
+                                         gtk.Label("Terminal"))
+        # TODO: There is a bug whereby the new VteTerminal and its
+        # scroll bar do not display correctly until it is resized or
+        # it produces more output.
+        self._tabset.set_current_page(index)
+        terminal.get_terminal_widget().connect("button_press_event",
+                                               self._menu_click)
+        return terminal
+
+    def get_widget(self):
+        return self._window
+
+
 def main():
-    Terminal()
+    TerminalWindow().get_widget().show_all()
     gtk.main()
 
 
