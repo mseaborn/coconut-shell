@@ -44,20 +44,22 @@ def get_vte_text(vte_terminal):
     return vte_terminal.get_text(lambda *args: True)
 
 
+def make_template():
+    return {"get_prompt": lambda: "$ "}
+
+
 class TerminalTest(unittest.TestCase):
 
     def test_gui_instantiation(self):
         terminal.TerminalWindow()
 
     def test_terminal_contents(self):
-        def get_prompt():
-            return "$ "
-        vte = terminal.TerminalWidget(get_prompt).get_terminal_widget()
+        vte = terminal.TerminalWidget(make_template).get_terminal_widget()
         screen = "".join(get_vte_text(vte)).rstrip("\n")
         self.assertEquals(screen, "$ ")
 
     def test_command_output(self):
-        term = terminal.TerminalWidget(get_prompt=lambda: "$ ")
+        term = terminal.TerminalWidget(make_template)
         term._current_reader("echo hello\n")
         gobject.main_context_default().iteration(False)
         screen = "".join(get_vte_text(term.get_terminal_widget())).rstrip("\n")

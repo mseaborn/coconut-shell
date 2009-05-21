@@ -249,6 +249,8 @@ class Launcher(object):
     def spawn(self, args, spec):
         def in_subprocess():
             try:
+                if "cwd_fd" in spec:
+                    os.fchdir(spec["cwd_fd"])
                 # Disable GC so that Python does not try to close FDs
                 # that we have closed ourselves, which prints "close
                 # failed: [Errno 9] Bad file descriptor" errors.
@@ -277,13 +279,15 @@ class PrefixLauncher(object):
         return self._launcher.spawn(self._prefix + args, spec)
 
 
-def chdir_builtin(args, spec):
-    if len(args) == 0:
-        # TODO: report nicer error when HOME is not set
-        chdir_logical(os.environ["HOME"])
-    else:
-        for arg in args:
-            chdir_logical(arg)
+def make_chdir_builtin(cwd_tracker, environ):
+    def chdir_builtin(args, spec):
+        if len(args) == 0:
+            # TODO: report nicer error when HOME is not set
+            cwd_tracker.chdir(environ["HOME"])
+        else:
+            for arg in args:
+                cwd_tracker.chdir(arg)
+    return chdir_builtin
 
 
 class LauncherWithBuiltins(object):
@@ -313,6 +317,9 @@ class NullJobController(object):
                 for proc in procs:
                     os.waitpid(proc, 0)
         return NullProcessGroup(), add_job
+
+    def get_builtins(self):
+        return {}
 
 
 def get_one(lst):
@@ -366,32 +373,93 @@ def unexpanduser(path):
     return path
 
 
-# Bash uses PWD to remember the cwd pathname before symlink expansion.
-def chdir_logical(path):
-    if os.path.isabs(path):
-        new_cwd = path
-    else:
-        new_cwd = os.path.join(get_logical_cwd(), path)
-    # Note that ".." is applied after symlink expansion.  We don't
-    # attempt to follow Bash's behaviour here.
-    os.chdir(path)
-    # Only set this if chdir() succeeds.
-    os.environ["PWD"] = os.path.normpath(new_cwd)
+# Can't use os.fdopen() to wrap directory FDs, because it fstat()s the
+# FD and rejects directory FDs.
+class FDWrapper(object):
+
+    def __init__(self, fd):
+        self._fd = fd
+
+    def __del__(self):
+        os.close(self._fd)
+
+    def fileno(self):
+        return self._fd
 
 
-def get_logical_cwd():
-    path = os.environ.get("PWD")
-    if path is not None:
+# gnome-terminal uses a process's cwd when opening new tabs/windows,
+# so it's still useful to set the process-global cwd.
+class GlobalCwdTracker(object):
+
+    def get_cwd_fd(self):
+        return FDWrapper(os.open(".", os.O_RDONLY))
+
+    def get_cwd(self):
+        return os.getcwd()
+
+    def chdir(self, dir_path):
+        os.chdir(dir_path)
+
+    def get_stat(self):
+        return os.stat(".")
+
+
+class LocalCwdTracker(object):
+
+    def __init__(self):
+        self._cwd_fd = FDWrapper(os.open(".", os.O_RDONLY))
+
+    def get_cwd_fd(self):
+        return self._cwd_fd
+
+    def get_cwd(self):
+        # Not thread-safe.  Could do with an fgetcwd() call.
+        old_cwd = FDWrapper(os.open(".", os.O_RDONLY))
         try:
-            stat1 = os.stat(path)
-            stat2 = os.stat(".")
-        except OSError:
-            pass
+            os.fchdir(self._cwd_fd)
+            return os.getcwd()
+        finally:
+            os.fchdir(old_cwd)
+
+    def chdir(self, dir_path):
+        self._cwd_fd = FDWrapper(os.open(dir_path,
+                                         os.O_RDONLY | os.O_DIRECTORY))
+
+    def get_stat(self):
+        return os.fstat(self._cwd_fd.fileno())
+
+
+class LogicalCwd(object):
+
+    def __init__(self, cwd_tracker, environ):
+        self._cwd_tracker = cwd_tracker
+        self._environ = environ
+
+    # Bash uses PWD to remember the cwd pathname before symlink expansion.
+    def chdir(self, path):
+        if os.path.isabs(path):
+            new_cwd = path
         else:
-            if (stat1.st_dev == stat2.st_dev and
-                stat1.st_ino == stat2.st_ino):
-                return path
-    return os.getcwd()
+            new_cwd = os.path.join(self._cwd_tracker.get_cwd(), path)
+        # Note that ".." is applied after symlink expansion.  We don't
+        # attempt to follow Bash's behaviour here.
+        self._cwd_tracker.chdir(path)
+        # Only set this if chdir() succeeds.
+        self._environ["PWD"] = os.path.normpath(new_cwd)
+
+    def get_cwd(self):
+        path = self._environ.get("PWD")
+        if path is not None:
+            try:
+                stat1 = os.stat(path)
+                stat2 = self._cwd_tracker.get_stat()
+            except OSError:
+                pass
+            else:
+                if (stat1.st_dev == stat2.st_dev and
+                    stat1.st_ino == stat2.st_ino):
+                    return path
+        return self._cwd_tracker.get_cwd()
 
 
 def remove_prefix(prefix, string):
@@ -456,51 +524,68 @@ def init_readline():
     readline.set_completer_delims(string.whitespace)
 
 
-simple_builtins = {"cd": chdir_builtin}
-
-
 def wrap_sudo(as_root, user):
     def sudo(args, spec):
         return as_root.spawn(args, spec)
     return {"sudo": sudo}, PrefixLauncher(["sudo", "-u", user], as_root)
 
 
+def make_get_prompt(cwd_tracker):
+    def get_prompt():
+        try:
+            cwd_path = unexpanduser(cwd_tracker.get_cwd())
+        except:
+            cwd_path = "?"
+        args = {"username": pwd.getpwuid(os.getuid()).pw_name,
+                "hostname": socket.gethostname(),
+                "cwd_path": cwd_path}
+        format = u"%(username)s@%(hostname)s:%(cwd_path)s$$ "
+        return (format % args).encode("utf-8")
+    return get_prompt
+
+
+def make_shell(parts):
+    parts.setdefault("job_output", sys.stdout)
+    parts.setdefault("wait_dispatcher", jobcontrol.WaitDispatcher())
+    parts.setdefault("job_controller", jobcontrol.JobController(
+        parts["wait_dispatcher"], parts["job_output"]))
+    parts.setdefault("environ", os.environ)
+    parts.setdefault("real_cwd", GlobalCwdTracker())
+    parts.setdefault("cwd", LogicalCwd(parts["real_cwd"], parts["environ"]))
+    parts.setdefault("get_prompt", make_get_prompt(parts["cwd"]))
+    parts.setdefault("builtins", {})
+    parts["builtins"]["cd"] = make_chdir_builtin(parts["cwd"], parts["environ"])
+    parts["builtins"].update(parts["job_controller"].get_builtins())
+    launcher = Launcher()
+    if "SUDO_USER" in os.environ and os.getuid() == 0:
+        sudo_builtins, launcher = wrap_sudo(
+            launcher, os.environ["SUDO_USER"])
+        parts["builtins"].update(sudo_builtins)
+    parts.setdefault("launcher", LauncherWithBuiltins(launcher,
+                                                      parts["builtins"]))
+
+
 class Shell(object):
 
-    def __init__(self, output):
-        self.job_controller = jobcontrol.JobController(
-            jobcontrol.WaitDispatcher(), output)
-        builtins = {}
-        builtins.update(simple_builtins)
-        builtins.update(self.job_controller.get_builtins())
-        launcher = Launcher()
-        if "SUDO_USER" in os.environ and os.getuid() == 0:
-            sudo_builtins, launcher = wrap_sudo(
-                launcher, os.environ["SUDO_USER"])
-            builtins.update(sudo_builtins)
-        self._launcher = LauncherWithBuiltins(launcher, builtins)
+    def __init__(self, parts):
+        self._parts = parts
+        make_shell(parts)
+        self.__dict__.update(parts)
 
     def run_command(self, line, fds):
-        run_command(self.job_controller, self._launcher, line, {"fds": fds})
-
-
-def get_prompt():
-    try:
-        cwd_path = unexpanduser(get_logical_cwd())
-    except:
-        cwd_path = "?"
-    args = {"username": pwd.getpwuid(os.getuid()).pw_name,
-            "hostname": socket.gethostname(),
-            "cwd_path": cwd_path}
-    format = u"%(username)s@%(hostname)s:%(cwd_path)s$$ "
-    return (format % args).encode("utf-8")
+        run_command(self.job_controller, self.launcher, line,
+                    {"fds": fds, "cwd_fd": self.real_cwd.get_cwd_fd()})
 
 
 class ReadlineReader(object):
 
+    def __init__(self, get_prompt):
+        self._get_prompt = get_prompt
+        init_readline()
+
     def readline(self, callback):
         try:
-            line = raw_input(get_prompt())
+            line = raw_input(self._get_prompt())
         except EOFError:
             callback(None)
         else:
@@ -508,18 +593,17 @@ class ReadlineReader(object):
 
 
 def main():
-    init_readline()
-    shell = Shell(sys.stdout)
+    shell = Shell({})
     fds = {FILENO_STDIN: sys.stdin,
            FILENO_STDOUT: sys.stdout,
            FILENO_STDERR: sys.stderr}
     signal.signal(signal.SIGINT, signal.SIG_IGN)
     try:
         import shell_pyrepl
-        reader = shell_pyrepl.make_reader(get_prompt, readline_complete)
+        reader = shell_pyrepl.make_reader(shell.get_prompt, readline_complete)
         print "using pyrepl"
     except ImportError:
-        reader = ReadlineReader()
+        reader = ReadlineReader(shell.get_prompt)
         print "using readline (pyrepl not available)"
     should_run = [True]
 

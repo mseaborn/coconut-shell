@@ -113,15 +113,18 @@ VTE_ERASE_ASCII_BACKSPACE = 1
 
 class TerminalWidget(object):
 
-    def __init__(self, get_prompt):
+    def __init__(self, make_template=lambda: {}):
         self._terminal = vte.Terminal()
         # set_pty() seems to set up backspace, but we're not using it.
         self._terminal.set_backspace_binding(VTE_ERASE_ASCII_BACKSPACE)
         self._console = VTEConsole(self._terminal)
+        parts = make_template()
+        parts["job_output"] = JobMessageOutput(self._terminal)
+        parts["real_cwd"] = shell.LocalCwdTracker()
+        self._shell = shell.Shell(parts)
         self._reader = shell_pyrepl.Reader(
-            get_prompt, shell.readline_complete, self._console)
+            self._shell.get_prompt, shell.readline_complete, self._console)
         self._current_reader = None
-        self._shell = shell.Shell(JobMessageOutput(self._terminal))
         self._read_input()
 
         self._terminal.connect("commit", self._on_user_input)
@@ -236,7 +239,7 @@ class TerminalWindow(object):
     def _add_tab(self):
         self._tabs += 1
         self._tabset.set_show_tabs(self._tabs > 1)
-        terminal = TerminalWidget(shell.get_prompt)
+        terminal = TerminalWidget()
         index = self._tabset.append_page(terminal.get_widget(),
                                          gtk.Label("Terminal"))
         # TODO: There is a bug whereby the new VteTerminal and its

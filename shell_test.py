@@ -25,7 +25,6 @@ import unittest
 
 import pyparsing as parse
 
-import jobcontrol
 import shell
 import tempdir_test
 
@@ -74,12 +73,17 @@ def pop_all(a_list):
 def std_fds(stdin, stdout, stderr):
     return {0: stdin, 1: stdout, 2: stderr}
 
+def default_fds():
+    return {0: sys.stdin, 1: sys.stdout, 2: sys.stderr}
+
+
+def make_shell():
+    parts = {"job_controller": shell.NullJobController()}
+    return shell.Shell(parts)
+
 
 def run_command(command, fds):
-    job_controller = shell.NullJobController()
-    launcher = shell.LauncherWithBuiltins(shell.Launcher(),
-                                          shell.simple_builtins)
-    shell.run_command(job_controller, launcher, command, {"fds": fds})
+    make_shell().run_command(command, fds)
 
 
 class ShellTests(tempdir_test.TempDirTestCase):
@@ -190,30 +194,32 @@ class ShellTests(tempdir_test.TempDirTestCase):
                           "/shelbyville")
 
     def test_get_logical_cwd(self):
+        cwd_tracker = make_shell().cwd
         temp_dir = self.make_temp_dir()
         os.mkdir(os.path.join(temp_dir, "realdir"))
         os.symlink("realdir", os.path.join(temp_dir, "symlink"))
         physical_path = os.path.join(temp_dir, "realdir")
         logical_path = os.path.join(temp_dir, "symlink")
-        shell.chdir_logical(logical_path)
-        self.assertEquals(shell.get_logical_cwd(), logical_path)
+        cwd_tracker.chdir(logical_path)
+        self.assertEquals(cwd_tracker.get_cwd(), logical_path)
         # Should also work when PWD is unset, pointing to the wrong
         # directory, or pointing to a nonexistent path.
         del os.environ["PWD"]
-        self.assertEquals(shell.get_logical_cwd(), physical_path)
+        self.assertEquals(cwd_tracker.get_cwd(), physical_path)
         os.environ["PWD"] = "/"
-        self.assertEquals(shell.get_logical_cwd(), physical_path)
+        self.assertEquals(cwd_tracker.get_cwd(), physical_path)
         os.environ["PWD"] = "/does/not/exist"
-        self.assertEquals(shell.get_logical_cwd(), physical_path)
+        self.assertEquals(cwd_tracker.get_cwd(), physical_path)
 
     def test_chdir_to_parent(self):
+        cwd_tracker = make_shell().cwd
         dir_path1 = self.make_temp_dir()
         dir_path2 = os.path.join(dir_path1, "dir2")
         os.mkdir(dir_path2)
-        shell.chdir_logical(dir_path2 + "/")
-        self.assertEquals(shell.get_logical_cwd(), dir_path2)
-        shell.chdir_logical("..")
-        self.assertEquals(shell.get_logical_cwd(), dir_path1)
+        cwd_tracker.chdir(dir_path2 + "/")
+        self.assertEquals(cwd_tracker.get_cwd(), dir_path2)
+        cwd_tracker.chdir("..")
+        self.assertEquals(cwd_tracker.get_cwd(), dir_path1)
 
     def test_get_prompt_in_deleted_directory(self):
         temp_dir = self.make_temp_dir()
@@ -221,7 +227,37 @@ class ShellTests(tempdir_test.TempDirTestCase):
         os.mkdir(path)
         os.chdir(path)
         os.rmdir(path)
-        shell.get_prompt()
+        make_shell().get_prompt()
+
+    def test_cwd_tracker(self):
+        dir1 = self.make_temp_dir()
+        dir2 = self.make_temp_dir()
+        tracker1 = shell.LocalCwdTracker()
+        tracker2 = shell.LocalCwdTracker()
+        tracker1.chdir(dir1)
+        tracker2.chdir(dir2)
+        self.assertEquals(tracker1.get_cwd(), dir1)
+        self.assertEquals(tracker2.get_cwd(), dir2)
+        tracker1.get_stat()
+
+    def test_independent_cwds(self):
+        output = open(os.devnull, "w")
+        def make_template():
+            return {"real_cwd": shell.LocalCwdTracker()}
+        shell1 = shell.Shell(make_template())
+        shell2 = shell.Shell(make_template())
+        dir1 = self.make_temp_dir()
+        dir2 = self.make_temp_dir()
+        shell1.run_command("cd %s" % dir1, default_fds())
+        shell2.run_command("cd %s" % dir2, default_fds())
+
+        write_stdout, read_stdout = make_fh_pair()
+        shell1.run_command("pwd", {1: write_stdout})
+        self.assertEquals(read_stdout.read(), "%s\n" % dir1)
+
+        write_stdout, read_stdout = make_fh_pair()
+        shell2.run_command("pwd", {1: write_stdout})
+        self.assertEquals(read_stdout.read(), "%s\n" % dir2)
 
     def test_completion(self):
         temp_dir = self.make_temp_dir()
@@ -403,11 +439,10 @@ class JobControlTests(unittest.TestCase):
             self.job_controller.print_messages()
             self.assertEquals(pop_all(messages), expected)
 
-        self.dispatcher = jobcontrol.WaitDispatcher()
-        self.job_controller = jobcontrol.JobController(
-            self.dispatcher, Output())
-        self.launcher = shell.LauncherWithBuiltins(
-            shell.Launcher(), self.job_controller.get_builtins())
+        self._shell = shell.Shell({"job_output": Output()})
+        self.dispatcher = self._shell.wait_dispatcher
+        self.job_controller = self._shell.job_controller
+        self.launcher = self._shell.launcher
         self.assert_messages = assert_messages
 
     def run_job_command(self, command, fds):
