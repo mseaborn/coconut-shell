@@ -17,7 +17,10 @@
 # 02110-1301 USA.
 
 import subprocess
+import time
 import unittest
+
+import gobject
 
 import terminal
 
@@ -31,6 +34,34 @@ class TerminalSizeTest(unittest.TestCase):
                                 stdout=subprocess.PIPE)
         stdout = proc.communicate()[0]
         self.assertEquals(stdout, "456 123\n")
+
+
+def get_vte_text(vte_terminal):
+    # VTE updates the terminal in the event loop after a
+    # non-configurable timeout, so we have to work around that.
+    time.sleep(0.05)
+    gobject.main_context_default().iteration(False)
+    return vte_terminal.get_text(lambda *args: True)
+
+
+class TerminalTest(unittest.TestCase):
+
+    def test_gui_instantiation(self):
+        terminal.TerminalWindow()
+
+    def test_terminal_contents(self):
+        def get_prompt():
+            return "$ "
+        vte = terminal.TerminalWidget(get_prompt).get_terminal_widget()
+        screen = "".join(get_vte_text(vte)).rstrip("\n")
+        self.assertEquals(screen, "$ ")
+
+    def test_command_output(self):
+        term = terminal.TerminalWidget(get_prompt=lambda: "$ ")
+        term._current_reader("echo hello\n")
+        gobject.main_context_default().iteration(False)
+        screen = "".join(get_vte_text(term.get_terminal_widget())).rstrip("\n")
+        self.assertEquals(screen, "$ echo hello\nhello\n$ ")
 
 
 if __name__ == "__main__":
