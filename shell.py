@@ -110,16 +110,13 @@ class CommandExp(object):
     def __init__(self, args):
         self._args = args
 
-    def run(self, launcher, spec):
+    def run(self, launcher, job, spec):
         evaled_args = []
         spec = copy_spec(spec)
         for arg in self._args:
             arg.eval(evaled_args, spec["fds"])
-        proc = launcher.spawn(evaled_args, spec)
-        if proc is None:
-            return []
-        else:
-            return [proc]
+        spec["args"] = evaled_args
+        launcher.spawn(job, spec)
 
 
 class PipelineExp(object):
@@ -128,16 +125,14 @@ class PipelineExp(object):
         self._cmd1 = cmd1
         self._cmd2 = cmd2
 
-    def run(self, launcher, spec):
+    def run(self, launcher, job, spec):
         pipe_read_fd, pipe_write_fd = os.pipe()
         spec1 = copy_spec(spec)
         spec2 = copy_spec(spec)
         spec1["fds"][FILENO_STDOUT] = os.fdopen(pipe_write_fd, "w")
         spec2["fds"][FILENO_STDIN] = os.fdopen(pipe_read_fd, "r")
-        procs = []
-        procs.extend(self._cmd1.run(launcher, spec1))
-        procs.extend(self._cmd2.run(launcher, spec2))
-        return procs
+        self._cmd1.run(launcher, job, spec1)
+        self._cmd2.run(launcher, job, spec2)
 
 
 class JobExp(object):
@@ -148,12 +143,9 @@ class JobExp(object):
         self._cmd_text = cmd_text
 
     def run(self, job_controller, launcher, spec):
-        pgroup, add_job = job_controller.create_job(self._is_foreground,
-                                                    self._cmd_text)
-        spec = copy_spec(spec)
-        spec["pgroup"] = pgroup
-        procs = self._cmd.run(launcher, spec)
-        add_job(procs)
+        job_procs = []
+        self._cmd.run(launcher, job_procs, spec)
+        job_controller.start_job(job_procs, self._is_foreground, self._cmd_text)
 
 
 # TODO: doesn't handle backslash right
@@ -244,29 +236,34 @@ def set_up_fds(fds):
     close_fds(fds)
 
 
+def spawn_subprocess(spec):
+    args = spec["args"]
+    def in_subprocess():
+        try:
+            if "cwd_fd" in spec:
+                os.fchdir(spec["cwd_fd"])
+            # Disable GC so that Python does not try to close FDs
+            # that we have closed ourselves, which prints "close
+            # failed: [Errno 9] Bad file descriptor" errors.
+            gc.disable()
+            set_up_signals()
+            spec["pgroup"].init_process(os.getpid())
+            set_up_fds(spec["fds"])
+            try:
+                os.execvp(args[0], args)
+            except OSError:
+                sys.stderr.write("%s: command not found\n" % args[0])
+        except:
+            traceback.print_exc()
+    pid = in_forked(in_subprocess)
+    spec["pgroup"].init_process(pid)
+    return pid
+
+
 class Launcher(object):
 
-    def spawn(self, args, spec):
-        def in_subprocess():
-            try:
-                if "cwd_fd" in spec:
-                    os.fchdir(spec["cwd_fd"])
-                # Disable GC so that Python does not try to close FDs
-                # that we have closed ourselves, which prints "close
-                # failed: [Errno 9] Bad file descriptor" errors.
-                gc.disable()
-                set_up_signals()
-                spec["pgroup"].init_process(os.getpid())
-                set_up_fds(spec["fds"])
-                try:
-                    os.execvp(args[0], args)
-                except OSError:
-                    sys.stderr.write("%s: command not found\n" % args[0])
-            except:
-                traceback.print_exc()
-        pid = in_forked(in_subprocess)
-        spec["pgroup"].init_process(pid)
-        return pid
+    def spawn(self, job_procs, spec):
+        job_procs.append(spec)
 
 
 class PrefixLauncher(object):
@@ -275,12 +272,15 @@ class PrefixLauncher(object):
         self._launcher = launcher
         self._prefix = prefix
 
-    def spawn(self, args, spec):
-        return self._launcher.spawn(self._prefix + args, spec)
+    def spawn(self, job, spec):
+        spec = copy_spec(spec)
+        spec["args"] = self._prefix + spec["args"]
+        self._launcher.spawn(job, spec)
 
 
 def make_chdir_builtin(cwd_tracker, environ):
-    def chdir_builtin(args, spec):
+    def chdir_builtin(job, spec):
+        args = spec["args"]
         if len(args) == 0:
             # TODO: report nicer error when HOME is not set
             cwd_tracker.chdir(environ["HOME"])
@@ -296,11 +296,14 @@ class LauncherWithBuiltins(object):
         self._launcher = launcher
         self._builtins = builtins
 
-    def spawn(self, args, spec):
-        if args[0] in self._builtins:
-            return self._builtins[args[0]](args[1:], spec)
+    def spawn(self, job, spec):
+        builtin = self._builtins.get(spec["args"][0])
+        if builtin is not None:
+            spec = copy_spec(spec)
+            spec["args"] = spec["args"][1:]
+            return builtin(job, spec)
         else:
-            return self._launcher.spawn(args, spec)
+            return self._launcher.spawn(job, spec)
 
 
 class NullProcessGroup(object):
@@ -311,12 +314,16 @@ class NullProcessGroup(object):
 
 class NullJobController(object):
 
-    def create_job(self, is_foreground, cmd_text):
-        def add_job(procs):
-            if is_foreground:
-                for proc in procs:
-                    os.waitpid(proc, 0)
-        return NullProcessGroup(), add_job
+    def start_job(self, job_procs, is_foreground, cmd_text):
+        for spec in job_procs:
+            spec["pgroup"] = NullProcessGroup()
+            del spec
+        pids = map(spawn_subprocess, job_procs)
+        # We must ensure that FDs are dropped before waiting.
+        job_procs[:] = []
+        if is_foreground:
+            for pid in pids:
+                os.waitpid(pid, 0)
 
     def get_builtins(self):
         return {}
@@ -525,8 +532,8 @@ def init_readline():
 
 
 def wrap_sudo(as_root, user):
-    def sudo(args, spec):
-        return as_root.spawn(args, spec)
+    def sudo(job, spec):
+        return as_root.spawn(job, spec)
     return {"sudo": sudo}, PrefixLauncher(["sudo", "-u", user], as_root)
 
 

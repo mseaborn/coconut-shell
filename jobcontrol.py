@@ -24,6 +24,8 @@ import threading
 
 import gobject
 
+import shell
+
 
 def make_pipe():
     read_fd, write_fd = os.pipe()
@@ -178,23 +180,28 @@ class JobController(object):
         self.jobs = {}
         self._tty_fd = sys.stdout
 
-    def create_job(self, is_foreground, cmd_text):
-        launcher = ProcessGroup(is_foreground, tty_fd=self._tty_fd)
+    def start_job(self, job_procs, is_foreground, cmd_text):
+        if len(job_procs) == 0:
+            return
+        pgroup = ProcessGroup(is_foreground, tty_fd=self._tty_fd)
+        pids = []
+        for spec in job_procs:
+            spec["pgroup"] = pgroup
+            pids.append(shell.spawn_subprocess(spec))
+            del spec
+        # We must ensure that FDs are dropped before waiting.
+        job_procs[:] = []
 
-        def add_job(procs):
-            if len(procs) == 0:
-                return
-            def on_state_change():
-                self._state_changed.add((job_id, job))
-            job_id = max([0] + self.jobs.keys()) + 1
-            job = Job(self._dispatcher, procs, launcher.get_pgid(),
-                      on_state_change, cmd_text)
-            self.jobs[job_id] = job
-            if is_foreground:
-                self._wait_for_job(job_id, job)
-            else:
-                self._output.write("[%s] %i\n" % (job_id, job.pgid))
-        return launcher, add_job
+        def on_state_change():
+            self._state_changed.add((job_id, job))
+        job_id = max([0] + self.jobs.keys()) + 1
+        job = Job(self._dispatcher, pids, pgroup.get_pgid(),
+                  on_state_change, cmd_text)
+        self.jobs[job_id] = job
+        if is_foreground:
+            self._wait_for_job(job_id, job)
+        else:
+            self._output.write("[%s] %i\n" % (job_id, job.pgid))
 
     def _wait_for_job(self, job_id, job):
         while job.state == "running":
@@ -225,13 +232,14 @@ class JobController(object):
                 del self.jobs[job_id]
         self._state_changed.clear()
 
-    def _list_jobs(self, args, spec):
+    def _list_jobs(self, new_job, spec):
         stdout = spec["fds"][1]
         for job_id, job in sorted(self.jobs.iteritems()):
             stdout.write("[%s] %s  %s\n" % (job_id, state_map[job.state],
                                             job.cmd_text))
 
-    def _job_from_args(self, args):
+    def _job_from_args(self, spec):
+        args = spec["args"]
         if len(args) == 0:
             job_id = max(self.jobs)
         elif len(args) == 1:
@@ -240,12 +248,12 @@ class JobController(object):
             raise Exception("Too many arguments")
         return job_id, self.jobs[job_id]
 
-    def _bg_job(self, args, fds):
-        job_id, job = self._job_from_args(args)
+    def _bg_job(self, job, spec):
+        job_id, job = self._job_from_args(spec)
         job.resume()
 
-    def _fg_job(self, args, fds):
-        job_id, job = self._job_from_args(args)
+    def _fg_job(self, job, spec):
+        job_id, job = self._job_from_args(spec)
         os.tcsetpgrp(self._tty_fd.fileno(), job.pgid)
         job.resume()
         self._wait_for_job(job_id, job)

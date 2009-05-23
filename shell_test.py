@@ -243,7 +243,8 @@ class ShellTests(tempdir_test.TempDirTestCase):
     def test_independent_cwds(self):
         output = open(os.devnull, "w")
         def make_template():
-            return {"real_cwd": shell.LocalCwdTracker()}
+            return {"real_cwd": shell.LocalCwdTracker(),
+                    "job_controller": shell.NullJobController()}
         shell1 = shell.Shell(make_template())
         shell2 = shell.Shell(make_template())
         dir1 = self.make_temp_dir()
@@ -252,11 +253,11 @@ class ShellTests(tempdir_test.TempDirTestCase):
         shell2.run_command("cd %s" % dir2, default_fds())
 
         write_stdout, read_stdout = make_fh_pair()
-        shell1.run_command("pwd", {1: write_stdout})
+        shell1.run_command("pwd", {1: write_stdout, 2: sys.stderr})
         self.assertEquals(read_stdout.read(), "%s\n" % dir1)
 
         write_stdout, read_stdout = make_fh_pair()
-        shell2.run_command("pwd", {1: write_stdout})
+        shell2.run_command("pwd", {1: write_stdout, 2: sys.stderr})
         self.assertEquals(read_stdout.read(), "%s\n" % dir2)
 
     def test_completion(self):
@@ -349,8 +350,8 @@ class FDRedirectionTests(tempdir_test.TempDirTestCase):
     def fds_for_command(self, command, fds):
         fds_got = []
         class DummyLauncher(object):
-            def spawn(self2, args, spec):
-                self.assertEquals(args, ["foo"])
+            def spawn(self2, job, spec):
+                self.assertEquals(spec["args"], ["foo"])
                 fds_got.append(spec["fds"])
 
         job_controller = shell.NullJobController()
