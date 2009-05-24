@@ -196,12 +196,18 @@ class TerminalWidget(object):
         set_terminal_size(slave_fd, self._terminal.get_column_count(),
                           self._terminal.get_row_count())
         forward_output_to_terminal(master_fd, self._terminal)
+
         def on_input(data):
             os.write(master_fd.fileno(), data)
-        self._current_reader = on_input
+
+        def to_foreground():
+            self._current_reader = on_input
+
         fds = {0: slave_fd, 1: slave_fd, 2: slave_fd}
+        to_foreground()
         job_spawner = jobcontrol.SessionJobSpawner(
-            self._shell.wait_dispatcher, self._shell.job_controller, slave_fd)
+            self._shell.wait_dispatcher, self._shell.job_controller, slave_fd,
+            to_foreground)
         try:
             # TODO: don't run a nested event loop here.
             self._shell.run_job_command(line, fds, job_spawner)

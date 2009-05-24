@@ -121,11 +121,12 @@ class ChildProcess(object):
 
 class Job(object):
 
-    def __init__(self, procs, pgid, cmd_text):
+    def __init__(self, procs, pgid, cmd_text, to_foreground):
         self.procs = procs
         self.pgid = pgid
         self.state = "running"
         self.cmd_text = cmd_text
+        self.to_foreground = to_foreground
         self._callbacks = []
         for proc in self.procs:
             proc.add_status_handler(self._process_status_handler)
@@ -234,16 +235,22 @@ class ProcessGroupJobSpawner(object):
         # We must ensure that FDs are dropped before any waiting.
         job_procs[:] = []
         procs = [ChildProcess(self._dispatcher, proc) for proc in pids]
-        job = Job(procs, pgroup.get_pgid(), cmd_text)
+        pgid = pgroup.get_pgid()
+
+        def to_foreground():
+            os.tcsetpgrp(self._tty_fd.fileno(), pgid)
+
+        job = Job(procs, pgroup.get_pgid(), cmd_text, to_foreground)
         self._job_controller.add_job(job, is_foreground)
 
 
 class SessionJobSpawner(object):
 
-    def __init__(self, dispatcher, job_controller, tty_fd):
+    def __init__(self, dispatcher, job_controller, tty_fd, to_foreground):
         self._dispatcher = dispatcher
         self._job_controller = job_controller
         self._tty_fd = tty_fd
+        self._to_foreground = to_foreground
 
     # Start a job with a new controlling tty.
     def start_job(self, job_procs, is_foreground, cmd_text):
@@ -255,7 +262,8 @@ class SessionJobSpawner(object):
         # We must ensure that FDs are dropped before any waiting.
         job_procs[:] = []
         procs = [ChildProcess(dispatcher_for_job, proc) for proc in pids]
-        job = Job(procs, pids[0], cmd_text)
+        pgid = pids[0]
+        job = Job(procs, pgid, cmd_text, self._to_foreground)
         self._job_controller.add_job(job, is_foreground)
 
 
@@ -331,8 +339,7 @@ class JobController(object):
 
     def _fg_job(self, job, spec):
         job_id, job = self._job_from_args(spec)
-        if self._tty_fd is not None:
-            os.tcsetpgrp(self._tty_fd.fileno(), job.pgid)
+        job.to_foreground()
         job.resume()
         self._wait_for_job(job_id, job)
 
