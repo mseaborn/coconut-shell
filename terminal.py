@@ -126,7 +126,7 @@ class TerminalWidget(object):
         parts["real_cwd"] = shell.LocalCwdTracker()
         self._shell = shell.Shell(parts)
         self._reader = shell_pyrepl.Reader(
-            self._shell.get_prompt, shell.readline_complete, self._console)
+            self._shell.get_prompt, self._shell.completer, self._console)
         self._current_reader = None
         self._read_input()
 

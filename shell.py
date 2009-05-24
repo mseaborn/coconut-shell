@@ -18,6 +18,7 @@
 # 02110-1301 USA.
 
 import errno
+import functools
 import gc
 import glob
 import itertools
@@ -381,6 +382,9 @@ class GlobalCwdTracker(object):
     def get_cwd_fd(self):
         return FDWrapper(os.open(".", os.O_RDONLY))
 
+    def relative_op(self, func):
+        return func()
+
     def get_cwd(self):
         return os.getcwd()
 
@@ -461,7 +465,6 @@ def remove_prefix(prefix, string):
 
 
 def complete_path_command(path, prefix):
-    names = set()
     for dir_path in path.split(":"):
         for filename in glob.glob("%s/%s*" % (dir_path, prefix)):
             try:
@@ -470,13 +473,12 @@ def complete_path_command(path, prefix):
                 pass
             else:
                 if st.st_mode & 0111 != 0:
-                    names.add(remove_prefix(dir_path + "/", filename))
-    return sorted(names)
+                    yield remove_prefix(dir_path + "/", filename)
 
 
 def complete_filename(string):
     filename, reverse_expansion = expanduser(string)
-    for filename in sorted(glob.glob(filename + "*")):
+    for filename in glob.glob(filename + "*"):
         if os.path.isdir(filename):
             # This treats symlinks to directories differently from Bash,
             # but this might be considered an improvement.
@@ -485,36 +487,14 @@ def complete_filename(string):
             yield reverse_expansion(filename)
 
 
-def readline_complete(context, string):
-    if context.strip() == "":
-        for filename in complete_path_command(os.environ["PATH"], string):
-            yield filename
-    for filename in complete_filename(string):
-        yield filename
-
-
-def readline_complete_wrapper(string, index):
-    try:
-        # readline has a weird interface to the completer.  We end up
-        # recomputing the matches for each match, so it can take
-        # O(n^2) time overall.  We could cache but it's not worth the
-        # bother.
-        context = readline.get_line_buffer()[:readline.get_begidx()]
-        matches = list(readline_complete(context, string))
-        if index < len(matches):
-            return matches[index]
-        else:
-            return None
-    except:
-        # The readline wrapper swallows any exception so we need to
-        # print it if it is to be reported.
-        traceback.print_exc()
-
-
-def init_readline():
-    readline.parse_and_bind("tab: complete")
-    readline.set_completer(readline_complete_wrapper)
-    readline.set_completer_delims(string.whitespace)
+def readline_complete(cwd, context, string):
+    def func():
+        names = set()
+        if context.strip() == "":
+            names.update(complete_path_command(os.environ["PATH"], string))
+        names.update(complete_filename(string))
+        return sorted(names)
+    return cwd.relative_op(func)
 
 
 def wrap_sudo(as_root, user):
@@ -550,6 +530,8 @@ def make_shell(parts):
     parts.setdefault("real_cwd", GlobalCwdTracker())
     parts.setdefault("cwd", LogicalCwd(parts["real_cwd"], parts["environ"]))
     parts.setdefault("get_prompt", make_get_prompt(parts["cwd"]))
+    parts.setdefault("completer", functools.partial(
+            readline_complete, parts["real_cwd"]))
     parts.setdefault("builtins", {})
     parts["builtins"]["cd"] = make_chdir_builtin(parts["cwd"], parts["environ"])
     parts["builtins"].update(parts["job_controller"].get_builtins())
@@ -580,9 +562,12 @@ class Shell(object):
 
 class ReadlineReader(object):
 
-    def __init__(self, get_prompt):
+    def __init__(self, get_prompt, completer):
         self._get_prompt = get_prompt
-        init_readline()
+        self._completer = completer
+        readline.parse_and_bind("tab: complete")
+        readline.set_completer(self._readline_complete_wrapper)
+        readline.set_completer_delims(string.whitespace)
 
     def readline(self, callback):
         try:
@@ -591,6 +576,23 @@ class ReadlineReader(object):
             callback(None)
         else:
             callback(line)
+
+    def _readline_complete_wrapper(self, string, index):
+        try:
+            # readline has a weird interface to the completer.  We end up
+            # recomputing the matches for each match, so it can take
+            # O(n^2) time overall.  We could cache but it's not worth the
+            # bother.
+            context = readline.get_line_buffer()[:readline.get_begidx()]
+            matches = list(self._completer(context, string))
+            if index < len(matches):
+                return matches[index]
+            else:
+                return None
+        except:
+            # The readline wrapper swallows any exception so we need to
+            # print it if it is to be reported.
+            traceback.print_exc()
 
 
 def main():
@@ -601,10 +603,10 @@ def main():
     signal.signal(signal.SIGINT, signal.SIG_IGN)
     try:
         import shell_pyrepl
-        reader = shell_pyrepl.make_reader(shell.get_prompt, readline_complete)
+        reader = shell_pyrepl.make_reader(shell.get_prompt, shell.completer)
         print "using pyrepl"
     except ImportError:
-        reader = ReadlineReader(shell.get_prompt)
+        reader = ReadlineReader(shell.get_prompt, shell.completer)
         print "using readline (pyrepl not available)"
     should_run = [True]
 

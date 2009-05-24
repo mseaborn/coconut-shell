@@ -268,9 +268,10 @@ class ShellTests(tempdir_test.TempDirTestCase):
         current_dir = self.make_temp_dir()
         write_file(os.path.join(current_dir, "file"), "")
         os.chdir(current_dir)
-        self.assertEquals(list(shell.readline_complete("  ", "")),
-                          ["program1", "program2", "file"])
-        self.assertEquals(list(shell.readline_complete("cmd", "")),
+        completer = make_shell().completer
+        self.assertEquals(completer("  ", ""),
+                          ["file", "program1", "program2"])
+        self.assertEquals(completer("cmd", ""),
                           ["file"])
 
     def test_fds_not_leaked(self):
@@ -439,6 +440,13 @@ class IndependentCwdTests(tempdir_test.TempDirTestCase):
         sh.run_command("cd foo123456", default_fds())
         self.assertEquals(sh.real_cwd.get_cwd(),
                           os.path.join(temp_dir, "foo123456"))
+
+    def test_cwd_relative_completion(self):
+        temp_dir = self.make_temp_dir()
+        os.mkdir(os.path.join(temp_dir, "foo-dir"))
+        sh = self.make_shell()
+        sh.run_command("cd %s" % temp_dir, default_fds())
+        self.assertEquals(sh.completer("echo ", ""), ["foo-dir/"])
 
 
 class JobControlTests(unittest.TestCase):
