@@ -142,13 +142,12 @@ class JobExp(object):
         self._is_foreground = is_foreground
         self._cmd_text = cmd_text
 
-    def run(self, job_controller, launcher, spec):
-        spec2 = copy_spec(spec)
-        spec2.pop("job_tty", None)
+    def run(self, job_spawner, launcher, spec):
         job_procs = []
-        self._cmd.run(launcher, job_procs, spec2)
-        job_controller.start_job(job_procs, self._is_foreground, self._cmd_text,
-                                 spec.get("job_tty"))
+        self._cmd.run(launcher, job_procs, spec)
+        if len(job_procs) > 0:
+            job_spawner.start_job(job_procs, self._is_foreground,
+                                  self._cmd_text)
 
 
 # TODO: doesn't handle backslash right
@@ -309,38 +308,15 @@ class LauncherWithBuiltins(object):
             return self._launcher.spawn(job, spec)
 
 
-class NullProcessGroup(object):
-
-    def init_process(self, pid):
-        pass
-
-
-class NullJobController(object):
-
-    def start_job(self, job_procs, is_foreground, cmd_text, job_tty):
-        for spec in job_procs:
-            spec["pgroup"] = NullProcessGroup()
-            del spec
-        pids = map(spawn_subprocess, job_procs)
-        # We must ensure that FDs are dropped before waiting.
-        job_procs[:] = []
-        if is_foreground:
-            for pid in pids:
-                os.waitpid(pid, 0)
-
-    def get_builtins(self):
-        return {}
-
-
 def get_one(lst):
     assert len(lst) == 1, lst
     return lst[0]
 
 
-def run_command(job_controller, launcher, line, spec):
+def run_command(job_spawner, launcher, line, spec):
     top_expr = top_command + parse.StringEnd()
     for cmd in top_expr.parseString(line):
-        cmd.run(job_controller, launcher, spec)
+        cmd.run(job_spawner, launcher, spec)
 
 
 def path_starts_with(path1, path2):
@@ -558,11 +534,12 @@ def make_get_prompt(cwd_tracker):
 def make_shell(parts):
     parts.setdefault("job_output", sys.stdout)
     parts.setdefault("job_tty", sys.stdout)
-    parts.setdefault("job_spawner", jobcontrol.ProcessGroupJobSpawner())
     parts.setdefault("wait_dispatcher", jobcontrol.WaitDispatcher())
     parts.setdefault("job_controller", jobcontrol.JobController(
-        parts["wait_dispatcher"], parts["job_output"], parts["job_tty"],
-        parts["job_spawner"]))
+        parts["wait_dispatcher"], parts["job_output"], parts["job_tty"]))
+    parts.setdefault("job_spawner", jobcontrol.ProcessGroupJobSpawner(
+            parts["wait_dispatcher"], parts["job_controller"],
+            parts["job_tty"]))
     parts.setdefault("environ", os.environ)
     parts.setdefault("real_cwd", GlobalCwdTracker())
     parts.setdefault("cwd", LogicalCwd(parts["real_cwd"], parts["environ"]))
@@ -587,13 +564,12 @@ class Shell(object):
         self.__dict__.update(parts)
 
     def run_command(self, line, fds):
-        run_command(self.job_controller, self.launcher, line,
+        run_command(self.job_spawner, self.launcher, line,
                     {"fds": fds, "cwd_fd": self.real_cwd.get_cwd_fd()})
 
-    def run_job_command(self, line, fds, job_tty):
-        run_command(self.job_controller, self.launcher, line,
-                    {"fds": fds, "cwd_fd": self.real_cwd.get_cwd_fd(),
-                     "job_tty": job_tty})
+    def run_job_command(self, line, fds, job_spawner):
+        run_command(job_spawner, self.launcher, line,
+                    {"fds": fds, "cwd_fd": self.real_cwd.get_cwd_fd()})
 
 
 class ReadlineReader(object):

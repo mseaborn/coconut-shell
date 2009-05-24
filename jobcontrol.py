@@ -19,7 +19,6 @@
 import errno
 import os
 import signal
-import sys
 import threading
 
 import gobject
@@ -122,21 +121,21 @@ class ChildProcess(object):
 
 class Job(object):
 
-    def __init__(self, procs, pgid, on_state_change, cmd_text):
+    def __init__(self, procs, pgid, cmd_text):
         self.procs = procs
         self.pgid = pgid
         self.state = "running"
         self.cmd_text = cmd_text
+        self._callbacks = []
         for proc in self.procs:
-            self._add_handler(proc, on_state_change)
+            proc.add_status_handler(self._process_status_handler)
 
-    def _add_handler(self, proc, on_state_change):
-        def handler(status):
-            old_state = self.state
-            self.state = self._get_state()
-            if self.state != old_state:
-                on_state_change()
-        proc.add_status_handler(handler)
+    def _process_status_handler(self, unused_status):
+        old_state = self.state
+        self.state = self._get_state()
+        if self.state != old_state:
+            for callback in self._callbacks:
+                callback()
 
     def _get_state(self):
         if all(proc.state == "finished" for proc in self.procs):
@@ -145,6 +144,9 @@ class Job(object):
             return "running"
         else:
             return "stopped"
+
+    def add_state_change_handler(self, callback):
+        self._callbacks.append(callback)
 
     def send_signal(self, signal_number):
         os.kill(-self.pgid, signal_number)
@@ -194,58 +196,84 @@ state_map = {"running": "Running",
              "finished": "Done"}
 
 
+class NullProcessGroup(object):
+
+    def init_process(self, pid):
+        pass
+
+
+class SimpleJobSpawner(object):
+
+    def start_job(self, job_procs, is_foreground, cmd_text):
+        for spec in job_procs:
+            spec["pgroup"] = NullProcessGroup()
+            del spec
+        pids = map(shell.spawn_subprocess, job_procs)
+        # We must ensure that FDs are dropped before waiting.
+        job_procs[:] = []
+        if is_foreground:
+            for pid in pids:
+                os.waitpid(pid, 0)
+
+
 class ProcessGroupJobSpawner(object):
 
+    def __init__(self, dispatcher, job_controller, tty_fd):
+        self._dispatcher = dispatcher
+        self._job_controller = job_controller
+        self._tty_fd = tty_fd
+
     # Start a job in a new process group but same session.
-    def spawn_job(self, dispatcher, job_procs, is_foreground, tty_fd):
-        pgroup = ProcessGroup(is_foreground, tty_fd)
+    def start_job(self, job_procs, is_foreground, cmd_text):
+        pgroup = ProcessGroup(is_foreground, self._tty_fd)
         pids = []
         for spec in job_procs:
             spec["pgroup"] = pgroup
             pids.append(shell.spawn_subprocess(spec))
             del spec
-        procs = [ChildProcess(dispatcher, proc) for proc in pids]
-        return procs, pgroup.get_pgid()
+        # We must ensure that FDs are dropped before any waiting.
+        job_procs[:] = []
+        procs = [ChildProcess(self._dispatcher, proc) for proc in pids]
+        job = Job(procs, pgroup.get_pgid(), cmd_text)
+        self._job_controller.add_job(job, is_foreground)
 
 
 class SessionJobSpawner(object):
 
+    def __init__(self, dispatcher, job_controller, tty_fd):
+        self._dispatcher = dispatcher
+        self._job_controller = job_controller
+        self._tty_fd = tty_fd
+
     # Start a job with a new controlling tty.
-    def spawn_job(self, dispatcher, job_procs, is_foreground, tty_fd):
+    def start_job(self, job_procs, is_foreground, cmd_text):
         dispatcher_for_job = SessionHelperDispatcher()
         helper_pid, pids = setsid_helper.run(
-            job_procs, tty_fd, dispatcher_for_job.handle_status)
+            job_procs, self._tty_fd, dispatcher_for_job.handle_status)
         # Wait for helper process so that it doesn't become a zombie.
-        dispatcher.add_handler(helper_pid, lambda status: None)
+        self._dispatcher.add_handler(helper_pid, lambda status: None)
+        # We must ensure that FDs are dropped before any waiting.
+        job_procs[:] = []
         procs = [ChildProcess(dispatcher_for_job, proc) for proc in pids]
-        return procs, pids[0]
+        job = Job(procs, pids[0], cmd_text)
+        self._job_controller.add_job(job, is_foreground)
 
 
 class JobController(object):
 
-    def __init__(self, dispatcher, output, tty_fd, spawner):
+    def __init__(self, dispatcher, output, tty_fd):
         self._dispatcher = dispatcher
         self._output = output
         self._tty_fd = tty_fd
-        self._spawner = spawner
         self._state_changed = set()
         self.jobs = {}
 
-    def start_job(self, job_procs, is_foreground, cmd_text, job_tty):
-        if len(job_procs) == 0:
-            return
-        if job_tty is None:
-            job_tty = self._tty_fd
-        procs, pgid = self._spawner.spawn_job(self._dispatcher, job_procs,
-                                              is_foreground, job_tty)
-        # We must ensure that FDs are dropped before waiting.
-        job_procs[:] = []
-
+    def add_job(self, job, is_foreground):
         def on_state_change():
             self._state_changed.add((job_id, job))
         job_id = max([0] + self.jobs.keys()) + 1
-        job = Job(procs, pgid, on_state_change, cmd_text)
         self.jobs[job_id] = job
+        job.add_state_change_handler(on_state_change)
         if is_foreground:
             self._wait_for_job(job_id, job)
         else:

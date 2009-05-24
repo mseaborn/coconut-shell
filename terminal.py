@@ -122,7 +122,7 @@ class TerminalWidget(object):
         parts = make_template()
         parts["job_output"] = JobMessageOutput(self._terminal)
         parts["job_tty"] = None
-        parts["job_spawner"] = jobcontrol.SessionJobSpawner()
+        parts["job_spawner"] = None # There is no single job spawner.
         parts["real_cwd"] = shell.LocalCwdTracker()
         self._shell = shell.Shell(parts)
         self._reader = shell_pyrepl.Reader(
@@ -200,9 +200,11 @@ class TerminalWidget(object):
             os.write(master_fd.fileno(), data)
         self._current_reader = on_input
         fds = {0: slave_fd, 1: slave_fd, 2: slave_fd}
+        job_spawner = jobcontrol.SessionJobSpawner(
+            self._shell.wait_dispatcher, self._shell.job_controller, slave_fd)
         try:
             # TODO: don't run a nested event loop here.
-            self._shell.run_job_command(line, fds, slave_fd)
+            self._shell.run_job_command(line, fds, job_spawner)
         except Exception:
             traceback.print_exc()
         self._read_input()

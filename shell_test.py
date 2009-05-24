@@ -25,6 +25,7 @@ import unittest
 
 import pyparsing as parse
 
+import jobcontrol
 import shell
 import tempdir_test
 
@@ -78,7 +79,7 @@ def default_fds():
 
 
 def make_shell():
-    parts = {"job_controller": shell.NullJobController()}
+    parts = {"job_spawner": jobcontrol.SimpleJobSpawner()}
     return shell.Shell(parts)
 
 
@@ -244,7 +245,7 @@ class ShellTests(tempdir_test.TempDirTestCase):
         output = open(os.devnull, "w")
         def make_template():
             return {"real_cwd": shell.LocalCwdTracker(),
-                    "job_controller": shell.NullJobController()}
+                    "job_spawner": jobcontrol.SimpleJobSpawner()}
         shell1 = shell.Shell(make_template())
         shell2 = shell.Shell(make_template())
         dir1 = self.make_temp_dir()
@@ -354,8 +355,8 @@ class FDRedirectionTests(tempdir_test.TempDirTestCase):
                 self.assertEquals(spec["args"], ["foo"])
                 fds_got.append(spec["fds"])
 
-        job_controller = shell.NullJobController()
-        shell.run_command(job_controller, DummyLauncher(), command,
+        job_spawner = None
+        shell.run_command(job_spawner, DummyLauncher(), command,
                           {"fds": fds})
         self.assertEquals(len(fds_got), 1)
         return fds_got[0]
@@ -443,12 +444,10 @@ class JobControlTests(unittest.TestCase):
         self._shell = shell.Shell({"job_output": Output()})
         self.dispatcher = self._shell.wait_dispatcher
         self.job_controller = self._shell.job_controller
-        self.launcher = self._shell.launcher
         self.assert_messages = assert_messages
 
     def run_job_command(self, command, fds):
-        shell.run_command(self.job_controller, self.launcher,
-                          command, {"fds": fds})
+        self._shell.run_command(command, fds)
 
     def test_exit_status(self):
         pid = os.fork()
