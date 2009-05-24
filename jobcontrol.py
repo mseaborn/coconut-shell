@@ -24,6 +24,7 @@ import threading
 
 import gobject
 
+import setsid_helper
 import shell
 
 
@@ -83,37 +84,59 @@ class WaitDispatcher(object):
                 break
 
 
+class SessionHelperDispatcher(object):
+
+    def __init__(self):
+        self._handlers = {}
+
+    def handle_status(self, pid, status):
+        if os.WIFEXITED(status) or os.WIFSIGNALED(status):
+            self._handlers.pop(pid)(status)
+        else:
+            self._handlers[pid](status)
+
+    def add_handler(self, pid, callback):
+        assert pid not in self._handlers
+        self._handlers[pid] = callback
+
+
 class ChildProcess(object):
 
-    def __init__(self, pid):
+    def __init__(self, dispatcher, pid):
         self.pid = pid
         self.state = "running"
+        self._callbacks = []
+        dispatcher.add_handler(pid, self._status_handler)
 
-    def update(self, status):
+    def _status_handler(self, status):
         if os.WIFSTOPPED(status):
             self.state = "stopped"
         else:
             self.state = "finished"
+        for func in self._callbacks:
+            func(status)
+
+    def add_status_handler(self, callback):
+        self._callbacks.append(callback)
 
 
 class Job(object):
 
-    def __init__(self, dispatcher, procs, pgid, on_state_change, cmd_text):
-        self.procs = [ChildProcess(proc) for proc in procs]
+    def __init__(self, procs, pgid, on_state_change, cmd_text):
+        self.procs = procs
         self.pgid = pgid
         self.state = "running"
         self.cmd_text = cmd_text
         for proc in self.procs:
-            self._add_handler(dispatcher, proc, on_state_change)
+            self._add_handler(proc, on_state_change)
 
-    def _add_handler(self, dispatcher, proc, on_state_change):
+    def _add_handler(self, proc, on_state_change):
         def handler(status):
-            proc.update(status)
             old_state = self.state
             self.state = self._get_state()
             if self.state != old_state:
                 on_state_change()
-        dispatcher.add_handler(proc.pid, handler)
+        proc.add_status_handler(handler)
 
     def _get_state(self):
         if all(proc.state == "finished" for proc in self.procs):
@@ -171,32 +194,57 @@ state_map = {"running": "Running",
              "finished": "Done"}
 
 
-class JobController(object):
+class ProcessGroupJobSpawner(object):
 
-    def __init__(self, dispatcher, output):
-        self._dispatcher = dispatcher
-        self._output = output
-        self._state_changed = set()
-        self.jobs = {}
-        self._tty_fd = sys.stdout
-
-    def start_job(self, job_procs, is_foreground, cmd_text):
-        if len(job_procs) == 0:
-            return
-        pgroup = ProcessGroup(is_foreground, tty_fd=self._tty_fd)
+    # Start a job in a new process group but same session.
+    def spawn_job(self, dispatcher, job_procs, is_foreground, tty_fd):
+        pgroup = ProcessGroup(is_foreground, tty_fd)
         pids = []
         for spec in job_procs:
             spec["pgroup"] = pgroup
             pids.append(shell.spawn_subprocess(spec))
             del spec
+        procs = [ChildProcess(dispatcher, proc) for proc in pids]
+        return procs, pgroup.get_pgid()
+
+
+class SessionJobSpawner(object):
+
+    # Start a job with a new controlling tty.
+    def spawn_job(self, dispatcher, job_procs, is_foreground, tty_fd):
+        dispatcher_for_job = SessionHelperDispatcher()
+        helper_pid, pids = setsid_helper.run(
+            job_procs, tty_fd, dispatcher_for_job.handle_status)
+        # Wait for helper process so that it doesn't become a zombie.
+        dispatcher.add_handler(helper_pid, lambda status: None)
+        procs = [ChildProcess(dispatcher_for_job, proc) for proc in pids]
+        return procs, pids[0]
+
+
+class JobController(object):
+
+    def __init__(self, dispatcher, output, tty_fd, spawner):
+        self._dispatcher = dispatcher
+        self._output = output
+        self._tty_fd = tty_fd
+        self._spawner = spawner
+        self._state_changed = set()
+        self.jobs = {}
+
+    def start_job(self, job_procs, is_foreground, cmd_text, job_tty):
+        if len(job_procs) == 0:
+            return
+        if job_tty is None:
+            job_tty = self._tty_fd
+        procs, pgid = self._spawner.spawn_job(self._dispatcher, job_procs,
+                                              is_foreground, job_tty)
         # We must ensure that FDs are dropped before waiting.
         job_procs[:] = []
 
         def on_state_change():
             self._state_changed.add((job_id, job))
         job_id = max([0] + self.jobs.keys()) + 1
-        job = Job(self._dispatcher, pids, pgroup.get_pgid(),
-                  on_state_change, cmd_text)
+        job = Job(procs, pgid, on_state_change, cmd_text)
         self.jobs[job_id] = job
         if is_foreground:
             self._wait_for_job(job_id, job)
@@ -216,7 +264,8 @@ class JobController(object):
         # The shell should never accidentally stop itself.
         signal.signal(signal.SIGTTIN, signal.SIG_IGN)
         signal.signal(signal.SIGTTOU, signal.SIG_IGN)
-        os.tcsetpgrp(self._tty_fd.fileno(), os.getpgrp())
+        if self._tty_fd is not None:
+            os.tcsetpgrp(self._tty_fd.fileno(), os.getpgrp())
 
     def _job_status_change(self, job_id, job):
         self._output.write("[%s]+ %s  %s\n" % (job_id, state_map[job.state],
@@ -254,7 +303,8 @@ class JobController(object):
 
     def _fg_job(self, job, spec):
         job_id, job = self._job_from_args(spec)
-        os.tcsetpgrp(self._tty_fd.fileno(), job.pgid)
+        if self._tty_fd is not None:
+            os.tcsetpgrp(self._tty_fd.fileno(), job.pgid)
         job.resume()
         self._wait_for_job(job_id, job)
 

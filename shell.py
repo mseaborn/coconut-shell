@@ -143,9 +143,12 @@ class JobExp(object):
         self._cmd_text = cmd_text
 
     def run(self, job_controller, launcher, spec):
+        spec2 = copy_spec(spec)
+        spec2.pop("job_tty", None)
         job_procs = []
-        self._cmd.run(launcher, job_procs, spec)
-        job_controller.start_job(job_procs, self._is_foreground, self._cmd_text)
+        self._cmd.run(launcher, job_procs, spec2)
+        job_controller.start_job(job_procs, self._is_foreground, self._cmd_text,
+                                 spec.get("job_tty"))
 
 
 # TODO: doesn't handle backslash right
@@ -314,7 +317,7 @@ class NullProcessGroup(object):
 
 class NullJobController(object):
 
-    def start_job(self, job_procs, is_foreground, cmd_text):
+    def start_job(self, job_procs, is_foreground, cmd_text, job_tty):
         for spec in job_procs:
             spec["pgroup"] = NullProcessGroup()
             del spec
@@ -337,7 +340,7 @@ def get_one(lst):
 def run_command(job_controller, launcher, line, spec):
     top_expr = top_command + parse.StringEnd()
     for cmd in top_expr.parseString(line):
-        procs = cmd.run(job_controller, launcher, spec)
+        cmd.run(job_controller, launcher, spec)
 
 
 def path_starts_with(path1, path2):
@@ -385,6 +388,7 @@ def unexpanduser(path):
 class FDWrapper(object):
 
     def __init__(self, fd):
+        assert isinstance(fd, int)
         self._fd = fd
 
     def __del__(self):
@@ -553,9 +557,12 @@ def make_get_prompt(cwd_tracker):
 
 def make_shell(parts):
     parts.setdefault("job_output", sys.stdout)
+    parts.setdefault("job_tty", sys.stdout)
+    parts.setdefault("job_spawner", jobcontrol.ProcessGroupJobSpawner())
     parts.setdefault("wait_dispatcher", jobcontrol.WaitDispatcher())
     parts.setdefault("job_controller", jobcontrol.JobController(
-        parts["wait_dispatcher"], parts["job_output"]))
+        parts["wait_dispatcher"], parts["job_output"], parts["job_tty"],
+        parts["job_spawner"]))
     parts.setdefault("environ", os.environ)
     parts.setdefault("real_cwd", GlobalCwdTracker())
     parts.setdefault("cwd", LogicalCwd(parts["real_cwd"], parts["environ"]))
@@ -582,6 +589,11 @@ class Shell(object):
     def run_command(self, line, fds):
         run_command(self.job_controller, self.launcher, line,
                     {"fds": fds, "cwd_fd": self.real_cwd.get_cwd_fd()})
+
+    def run_job_command(self, line, fds, job_tty):
+        run_command(self.job_controller, self.launcher, line,
+                    {"fds": fds, "cwd_fd": self.real_cwd.get_cwd_fd(),
+                     "job_tty": job_tty})
 
 
 class ReadlineReader(object):

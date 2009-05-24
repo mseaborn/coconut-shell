@@ -29,6 +29,7 @@ import vte
 
 import pyrepl.unix_console
 
+import jobcontrol
 import shell
 import shell_pyrepl
 
@@ -120,6 +121,8 @@ class TerminalWidget(object):
         self._console = VTEConsole(self._terminal)
         parts = make_template()
         parts["job_output"] = JobMessageOutput(self._terminal)
+        parts["job_tty"] = None
+        parts["job_spawner"] = jobcontrol.SessionJobSpawner()
         parts["real_cwd"] = shell.LocalCwdTracker()
         self._shell = shell.Shell(parts)
         self._reader = shell_pyrepl.Reader(
@@ -160,7 +163,6 @@ class TerminalWidget(object):
         return self._terminal
 
     def _read_input(self):
-        self._shell.job_controller.shell_to_foreground()
         self._shell.job_controller.print_messages()
         self._reader.prepare()
         self._reader.refresh()
@@ -200,7 +202,7 @@ class TerminalWidget(object):
         fds = {0: slave_fd, 1: slave_fd, 2: slave_fd}
         try:
             # TODO: don't run a nested event loop here.
-            self._shell.run_command(line, fds)
+            self._shell.run_job_command(line, fds, slave_fd)
         except Exception:
             traceback.print_exc()
         self._read_input()
