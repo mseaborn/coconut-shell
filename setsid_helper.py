@@ -86,15 +86,20 @@ def spawn(specs, pipe_fd, tty_fd):
         pipe.write("%s\n" % repr((pid, status)))
 
 
+def reprable_spec(spec):
+    spec = dict((key, value) for key, value in spec.iteritems()
+                if key in shell.subprocess_keys)
+    spec["fds"] = dict((dest_fd, fd.fileno())
+                       for dest_fd, fd in spec["fds"].iteritems())
+    if "cwd_fd" in spec:
+        spec["cwd_fd"] = spec["cwd_fd"].fileno()
+    return spec
+
+
 def run(proc_specs, tty_fd, callback):
     pipe_read, pipe_write = jobcontrol.make_pipe()
 
-    proc_specs = [spec.copy() for spec in proc_specs]
-    for spec in proc_specs:
-        spec["fds"] = dict((dest_fd, fd.fileno())
-                           for dest_fd, fd in spec["fds"].iteritems())
-        if "cwd_fd" in spec:
-            spec["cwd_fd"] = spec["cwd_fd"].fileno()
+    proc_specs = map(reprable_spec, proc_specs)
     args = (proc_specs, pipe_write.fileno(), tty_fd.fileno())
     # Exposes icky internal stuff in argv, visible in /proc.
     # Send across pipe instead?
@@ -104,6 +109,7 @@ def run(proc_specs, tty_fd, callback):
         os.execv(sys.executable, argv)
 
     helper_pid = shell.in_forked(in_subprocess)
+    del pipe_write
     # Forking and sending pids should be prompt, so we can block here.
     pids = eval(pipe_read.readline(), {})
 

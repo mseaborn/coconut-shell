@@ -56,8 +56,8 @@ class StringArgument(object):
     def __init__(self, string):
         self._string = string
 
-    def eval(self, args, fds):
-        args.append(self._string)
+    def eval(self, spec):
+        spec["args"].append(self._string)
 
 
 class ExpandStringArgument(object):
@@ -69,14 +69,14 @@ class ExpandStringArgument(object):
         # checking the filesystem would be pointless.
         self._do_glob = "*" in string or "?" in string
 
-    def eval(self, args, fds):
+    def eval(self, spec):
         string = os.path.expanduser(self._string)
         if self._do_glob:
-            matches = sorted(glob.glob(string))
+            matches = sorted(spec["cwd"].relative_op(lambda: glob.glob(string)))
             if len(matches) > 0:
-                args.extend(matches)
+                spec["args"].extend(matches)
                 return
-        args.append(string)
+        spec["args"].append(string)
 
 
 class RedirectFD(object):
@@ -85,8 +85,8 @@ class RedirectFD(object):
         self._fd1 = fd1
         self._fd2 = fd2
 
-    def eval(self, args, fds):
-        fds[self._fd1] = fds[self._fd2]
+    def eval(self, spec):
+        spec["fds"][self._fd1] = spec["fds"][self._fd2]
 
 
 class RedirectFile(object):
@@ -96,8 +96,9 @@ class RedirectFile(object):
         self._mode = mode
         self._filename = filename
 
-    def eval(self, args, fds):
-        fds[self._dest_fd] = open(self._filename, self._mode)
+    def eval(self, spec):
+        spec["fds"][self._dest_fd] = \
+            spec["cwd"].relative_op(lambda: open(self._filename, self._mode))
 
 
 def copy_spec(spec):
@@ -112,11 +113,10 @@ class CommandExp(object):
         self._args = args
 
     def run(self, launcher, job, spec):
-        evaled_args = []
         spec = copy_spec(spec)
+        spec["args"] = []
         for arg in self._args:
-            arg.eval(evaled_args, spec["fds"])
-        spec["args"] = evaled_args
+            arg.eval(spec)
         launcher.spawn(job, spec)
 
 
@@ -238,6 +238,8 @@ def set_up_fds(fds):
         os.dup2(temp_fd, fd_dest)
     close_fds(fds)
 
+
+subprocess_keys = set(["args", "fds", "cwd_fd", "pgroup"])
 
 def spawn_subprocess(spec):
     args = spec["args"]
@@ -551,13 +553,15 @@ class Shell(object):
         make_shell(parts)
         self.__dict__.update(parts)
 
+    def _make_spec(self, fds):
+        return {"fds": fds, "cwd_fd": self.real_cwd.get_cwd_fd(),
+                "cwd": self.real_cwd}
+
     def run_command(self, line, fds):
-        run_command(self.job_spawner, self.launcher, line,
-                    {"fds": fds, "cwd_fd": self.real_cwd.get_cwd_fd()})
+        run_command(self.job_spawner, self.launcher, line, self._make_spec(fds))
 
     def run_job_command(self, line, fds, job_spawner):
-        run_command(job_spawner, self.launcher, line,
-                    {"fds": fds, "cwd_fd": self.real_cwd.get_cwd_fd()})
+        run_command(job_spawner, self.launcher, line, self._make_spec(fds))
 
 
 class ReadlineReader(object):

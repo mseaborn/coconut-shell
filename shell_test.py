@@ -327,7 +327,7 @@ class FDRedirectionTests(tempdir_test.TempDirTestCase):
 
         job_spawner = None
         shell.run_command(job_spawner, DummyLauncher(), command,
-                          {"fds": fds})
+                          {"fds": fds, "cwd": shell.GlobalCwdTracker()})
         self.assertEquals(len(fds_got), 1)
         return fds_got[0]
 
@@ -447,6 +447,24 @@ class IndependentCwdTests(tempdir_test.TempDirTestCase):
         sh = self.make_shell()
         sh.run_command("cd %s" % temp_dir, default_fds())
         self.assertEquals(sh.completer("echo ", ""), ["foo-dir/"])
+
+    def test_cwd_relative_redirection(self):
+        temp_dir = self.make_temp_dir()
+        write_file(os.path.join(temp_dir, "input123"), "foo")
+        sh = self.make_shell()
+        sh.run_command("cd %s" % temp_dir, default_fds())
+        write_stdout, read_stdout = make_fh_pair()
+        sh.run_command("cat < input123", {1: write_stdout, 2: sys.stderr})
+        self.assertEquals(read_stdout.read(), "foo")
+
+    def test_cwd_relative_globbing(self):
+        temp_dir = self.make_temp_dir()
+        write_file(os.path.join(temp_dir, "input123"), "")
+        sh = self.make_shell()
+        sh.run_command("cd %s" % temp_dir, default_fds())
+        write_stdout, read_stdout = make_fh_pair()
+        sh.run_command("echo in*", {1: write_stdout, 2: sys.stderr})
+        self.assertEquals(read_stdout.read(), "input123\n")
 
 
 class JobControlTests(unittest.TestCase):
