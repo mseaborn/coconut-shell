@@ -399,18 +399,24 @@ class LocalCwdTracker(object):
     def get_cwd_fd(self):
         return self._cwd_fd
 
-    def get_cwd(self):
-        # Not thread-safe.  Could do with an fgetcwd() call.
+    def relative_op(self, func):
+        # Not thread-safe.  Would be better to use *at() syscalls, but
+        # they are not readily available from Python, and not all
+        # calls have a *at() equivalent.  For example, there is no
+        # fgetcwd().
         old_cwd = FDWrapper(os.open(".", os.O_RDONLY))
         try:
             os.fchdir(self._cwd_fd)
-            return os.getcwd()
+            return func()
         finally:
             os.fchdir(old_cwd)
 
+    def get_cwd(self):
+        return self.relative_op(os.getcwd)
+
     def chdir(self, dir_path):
-        self._cwd_fd = FDWrapper(os.open(dir_path,
-                                         os.O_RDONLY | os.O_DIRECTORY))
+        self._cwd_fd = self.relative_op(
+            lambda: FDWrapper(os.open(dir_path, os.O_RDONLY | os.O_DIRECTORY)))
 
     def get_stat(self):
         return os.fstat(self._cwd_fd.fileno())

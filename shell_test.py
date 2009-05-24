@@ -230,37 +230,6 @@ class ShellTests(tempdir_test.TempDirTestCase):
         os.rmdir(path)
         make_shell().get_prompt()
 
-    def test_cwd_tracker(self):
-        dir1 = self.make_temp_dir()
-        dir2 = self.make_temp_dir()
-        tracker1 = shell.LocalCwdTracker()
-        tracker2 = shell.LocalCwdTracker()
-        tracker1.chdir(dir1)
-        tracker2.chdir(dir2)
-        self.assertEquals(tracker1.get_cwd(), dir1)
-        self.assertEquals(tracker2.get_cwd(), dir2)
-        tracker1.get_stat()
-
-    def test_independent_cwds(self):
-        output = open(os.devnull, "w")
-        def make_template():
-            return {"real_cwd": shell.LocalCwdTracker(),
-                    "job_spawner": jobcontrol.SimpleJobSpawner()}
-        shell1 = shell.Shell(make_template())
-        shell2 = shell.Shell(make_template())
-        dir1 = self.make_temp_dir()
-        dir2 = self.make_temp_dir()
-        shell1.run_command("cd %s" % dir1, default_fds())
-        shell2.run_command("cd %s" % dir2, default_fds())
-
-        write_stdout, read_stdout = make_fh_pair()
-        shell1.run_command("pwd", {1: write_stdout, 2: sys.stderr})
-        self.assertEquals(read_stdout.read(), "%s\n" % dir1)
-
-        write_stdout, read_stdout = make_fh_pair()
-        shell2.run_command("pwd", {1: write_stdout, 2: sys.stderr})
-        self.assertEquals(read_stdout.read(), "%s\n" % dir2)
-
     def test_completion(self):
         temp_dir = self.make_temp_dir()
         os.mkdir(os.path.join(temp_dir, "a-dir"))
@@ -427,6 +396,49 @@ class FDRedirectionTests(tempdir_test.TempDirTestCase):
         # the job at all, or record it in the jobs list properly.
         self.assertRaises(KeyError,
                           lambda: self.fds_for_command("foo >&123", {}))
+
+
+class IndependentCwdTests(tempdir_test.TempDirTestCase):
+
+    def test_cwd_tracker(self):
+        dir1 = self.make_temp_dir()
+        dir2 = self.make_temp_dir()
+        tracker1 = shell.LocalCwdTracker()
+        tracker2 = shell.LocalCwdTracker()
+        tracker1.chdir(dir1)
+        tracker2.chdir(dir2)
+        self.assertEquals(tracker1.get_cwd(), dir1)
+        self.assertEquals(tracker2.get_cwd(), dir2)
+        tracker1.get_stat()
+
+    def make_shell(self):
+        return shell.Shell({"real_cwd": shell.LocalCwdTracker(),
+                            "job_spawner": jobcontrol.SimpleJobSpawner()})
+
+    def test_independent_cwds(self):
+        shell1 = self.make_shell()
+        shell2 = self.make_shell()
+        dir1 = self.make_temp_dir()
+        dir2 = self.make_temp_dir()
+        shell1.run_command("cd %s" % dir1, default_fds())
+        shell2.run_command("cd %s" % dir2, default_fds())
+
+        write_stdout, read_stdout = make_fh_pair()
+        shell1.run_command("pwd", {1: write_stdout, 2: sys.stderr})
+        self.assertEquals(read_stdout.read(), "%s\n" % dir1)
+
+        write_stdout, read_stdout = make_fh_pair()
+        shell2.run_command("pwd", {1: write_stdout, 2: sys.stderr})
+        self.assertEquals(read_stdout.read(), "%s\n" % dir2)
+
+    def test_cwd_relative_chdir(self):
+        temp_dir = self.make_temp_dir()
+        os.mkdir(os.path.join(temp_dir, "foo123456"))
+        sh = self.make_shell()
+        sh.run_command("cd %s" % temp_dir, default_fds())
+        sh.run_command("cd foo123456", default_fds())
+        self.assertEquals(sh.real_cwd.get_cwd(),
+                          os.path.join(temp_dir, "foo123456"))
 
 
 class JobControlTests(unittest.TestCase):
