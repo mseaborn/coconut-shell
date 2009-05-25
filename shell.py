@@ -24,7 +24,6 @@ import glob
 import itertools
 import os
 import pwd
-import readline
 import signal
 import socket
 import string
@@ -569,6 +568,12 @@ class ReadlineReader(object):
     def __init__(self, get_prompt, completer):
         self._get_prompt = get_prompt
         self._completer = completer
+        # Don't import readline until we actually need it, because it
+        # has the side effect of setting the environment variables
+        # LINES and COLUMNS.  When these are set wrongly (with the
+        # enclosing tty's size) it messes up the output of some
+        # console programs such as "top".
+        import readline
         readline.parse_and_bind("tab: complete")
         readline.set_completer(self._readline_complete_wrapper)
         readline.set_completer_delims(string.whitespace)
