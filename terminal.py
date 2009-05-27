@@ -250,6 +250,13 @@ class TerminalWindow(object):
         self._window.connect(
             "popup_menu",
             lambda widget: self._make_menu().popup(None, None, None, 0, 0))
+        self._window.connect("hide", self._on_hidden)
+
+    def _on_hidden(self, widged_unused):
+        self._window.destroy()
+        if not any(window.get_property("visible")
+                   for window in gtk.window_list_toplevels()):
+            gtk.main_quit()
 
     def _menu_click(self, widget_unused, event):
         if event.button == 3:
@@ -259,7 +266,11 @@ class TerminalWindow(object):
 
     def _make_menu(self):
         menu = gtk.Menu()
-        item = gtk.MenuItem("Open _Tab")
+        item = gtk.MenuItem("Open _Terminal")
+        item.connect("activate",
+                     lambda *args: TerminalWindow().get_widget().show_all())
+        menu.add(item)
+        item = gtk.MenuItem("Open Ta_b")
         item.connect("activate", lambda *args: self._add_tab())
         menu.add(item)
         tab = self._tabs[self._tabset.get_current_page()]
@@ -291,7 +302,6 @@ class TerminalWindow(object):
             self._update_tabs()
             if len(self._tabs) == 0:
                 self._window.destroy()
-                gtk.main_quit()
 
         terminal.add_finished_handler(remove_tab)
         return terminal
