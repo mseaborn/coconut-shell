@@ -326,6 +326,14 @@ class ShellTests(tempdir_test.TempDirTestCase):
         self.assertEquals(data, "")
         self.assertEquals(read_file(temp_file), "foo 42\n")
 
+    def test_environ(self):
+        sh = shell.Shell({"job_spawner": jobcontrol.SimpleJobSpawner(),
+                          "environ": {"FOO123": "bar1234",
+                                      "PATH": os.environ["PATH"]}})
+        write_stdout, read_stdout = make_fh_pair()
+        sh.run_command("printenv FOO123", {1: write_stdout, 2: sys.stderr})
+        self.assertEquals(read_stdout.read(), "bar1234\n")
+
 
 class FDRedirectionTests(tempdir_test.TempDirTestCase):
 

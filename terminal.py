@@ -136,6 +136,7 @@ class TerminalWidget(object):
         parts["job_output"] = JobMessageOutput(self._terminal)
         parts["job_tty"] = None
         parts["job_spawner"] = None # There is no single job spawner.
+        parts["environ"] = os.environ.copy()
         parts["real_cwd"] = shell.LocalCwdTracker()
         self._shell = shell.Shell(parts)
         self._reader = shell_pyrepl.Reader(

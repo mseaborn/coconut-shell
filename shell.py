@@ -239,7 +239,7 @@ def set_up_fds(fds):
     close_fds(fds)
 
 
-subprocess_keys = set(["args", "fds", "cwd_fd", "pgroup",
+subprocess_keys = set(["args", "fds", "environ", "cwd_fd", "pgroup",
                        "uid", "gid", "groups"])
 
 def spawn_subprocess(spec):
@@ -262,7 +262,7 @@ def spawn_subprocess(spec):
             if "uid" in spec:
                 os.setuid(spec["uid"])
             try:
-                os.execvp(args[0], args)
+                os.execvpe(args[0], args, spec.get("environ", os.environ))
             except OSError:
                 sys.stderr.write("%s: command not found\n" % args[0])
         except:
@@ -566,7 +566,9 @@ class Shell(object):
         self.__dict__.update(parts)
 
     def _make_spec(self, fds):
-        return {"fds": fds, "cwd_fd": self.real_cwd.get_cwd_fd(),
+        return {"fds": fds,
+                "environ": self.environ,
+                "cwd_fd": self.real_cwd.get_cwd_fd(),
                 "cwd": self.real_cwd}
 
     def run_command(self, line, fds):
