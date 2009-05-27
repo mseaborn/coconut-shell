@@ -21,6 +21,7 @@ import errno
 import functools
 import gc
 import glob
+import grp
 import itertools
 import os
 import pwd
@@ -238,7 +239,8 @@ def set_up_fds(fds):
     close_fds(fds)
 
 
-subprocess_keys = set(["args", "fds", "cwd_fd", "pgroup"])
+subprocess_keys = set(["args", "fds", "cwd_fd", "pgroup",
+                       "uid", "gid", "groups"])
 
 def spawn_subprocess(spec):
     args = spec["args"]
@@ -253,6 +255,12 @@ def spawn_subprocess(spec):
             set_up_signals()
             spec["pgroup"].init_process(os.getpid())
             set_up_fds(spec["fds"])
+            if "groups" in spec:
+                os.setgroups(spec["groups"])
+            if "gid" in spec:
+                os.setgid(spec["gid"])
+            if "uid" in spec:
+                os.setuid(spec["uid"])
             try:
                 os.execvp(args[0], args)
             except OSError:
@@ -270,15 +278,20 @@ class Launcher(object):
         job_procs.append(spec)
 
 
-class PrefixLauncher(object):
+class SudoLauncher(object):
 
-    def __init__(self, prefix, launcher):
+    def __init__(self, user, launcher):
         self._launcher = launcher
-        self._prefix = prefix
+        self._user = user
 
     def spawn(self, job, spec):
         spec = copy_spec(spec)
-        spec["args"] = self._prefix + spec["args"]
+        entry = pwd.getpwnam(self._user)
+        spec["uid"] = entry.pw_uid
+        spec["gid"] = entry.pw_gid
+        spec["groups"] = [entry.pw_gid]
+        spec["groups"].extend([group.gr_gid for group in grp.getgrall()
+                               if self._user in group.gr_mem])
         self._launcher.spawn(job, spec)
 
 
@@ -501,7 +514,7 @@ def readline_complete(cwd, context, string):
 def wrap_sudo(as_root, user):
     def sudo(job, spec):
         return as_root.spawn(job, spec)
-    return {"sudo": sudo}, PrefixLauncher(["sudo", "-u", user], as_root)
+    return {"sudo": sudo}, SudoLauncher(user, as_root)
 
 
 def make_get_prompt(cwd_tracker):
