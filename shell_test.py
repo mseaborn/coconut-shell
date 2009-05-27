@@ -212,6 +212,17 @@ class ShellTests(tempdir_test.TempDirTestCase):
         os.environ["PWD"] = "/does/not/exist"
         self.assertEquals(cwd_tracker.get_cwd(), physical_path)
 
+    def test_logical_chdir(self):
+        cwd_tracker = make_shell().cwd
+        temp_dir = self.make_temp_dir()
+        os.makedirs(os.path.join(temp_dir, "realdir", "subdir"))
+        os.symlink("realdir", os.path.join(temp_dir, "symlink"))
+        logical_path = os.path.join(temp_dir, "symlink")
+        cwd_tracker.chdir(logical_path)
+        cwd_tracker.chdir("subdir")
+        self.assertEquals(cwd_tracker.get_cwd(),
+                          os.path.join(logical_path, "subdir"))
+
     def test_chdir_to_parent(self):
         cwd_tracker = make_shell().cwd
         dir_path1 = self.make_temp_dir()
@@ -236,7 +247,7 @@ class ShellTests(tempdir_test.TempDirTestCase):
         os.mkdir(os.path.join(temp_dir, "b-dir"))
         write_file(os.path.join(temp_dir, "a-file"), "")
         os.chdir(temp_dir)
-        self.assertEquals(list(shell.complete_filename("a-")),
+        self.assertEquals(sorted(shell.complete_filename("a-")),
                           ["a-dir/", "a-file"])
 
     def test_completion_with_tilde_expansion(self):

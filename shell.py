@@ -451,7 +451,7 @@ class LogicalCwd(object):
         if os.path.isabs(path):
             new_cwd = path
         else:
-            new_cwd = os.path.join(self._cwd_tracker.get_cwd(), path)
+            new_cwd = os.path.join(self.get_cwd(), path)
         # Note that ".." is applied after symlink expansion.  We don't
         # attempt to follow Bash's behaviour here.
         self._cwd_tracker.chdir(path)
