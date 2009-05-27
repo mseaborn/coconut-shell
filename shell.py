@@ -411,8 +411,10 @@ class GlobalCwdTracker(object):
 
 class LocalCwdTracker(object):
 
-    def __init__(self):
-        self._cwd_fd = FDWrapper(os.open(".", os.O_RDONLY))
+    def __init__(self, cwd_fd=None):
+        if cwd_fd is None:
+            cwd_fd = FDWrapper(os.open(".", os.O_RDONLY))
+        self._cwd_fd = cwd_fd
 
     def get_cwd_fd(self):
         return self._cwd_fd
@@ -438,6 +440,9 @@ class LocalCwdTracker(object):
 
     def get_stat(self):
         return os.fstat(self._cwd_fd.fileno())
+
+    def copy(self):
+        return LocalCwdTracker(self.get_cwd_fd())
 
 
 class LogicalCwd(object):

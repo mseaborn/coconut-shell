@@ -127,17 +127,16 @@ VTE_ERASE_ASCII_BACKSPACE = 1
 
 class TerminalWidget(object):
 
-    def __init__(self, make_template=lambda: {}):
+    def __init__(self, parts):
         self._terminal = vte.Terminal()
         # set_pty() seems to set up backspace, but we're not using it.
         self._terminal.set_backspace_binding(VTE_ERASE_ASCII_BACKSPACE)
         self._console = VTEConsole(self._terminal)
-        parts = make_template()
         parts["job_output"] = JobMessageOutput(self._terminal)
         parts["job_tty"] = None
         parts["job_spawner"] = None # There is no single job spawner.
-        parts["environ"] = os.environ.copy()
-        parts["real_cwd"] = shell.LocalCwdTracker()
+        parts.setdefault("environ", os.environ.copy())
+        parts.setdefault("real_cwd", shell.LocalCwdTracker())
         self._shell = shell.Shell(parts)
         self._reader = shell_pyrepl.Reader(
             self._shell.get_prompt, self._shell.completer, self._console)
@@ -157,6 +156,10 @@ class TerminalWidget(object):
         self._hbox.show_all()
         self._on_finished = EventDistributor()
         self.add_finished_handler = self._on_finished.add
+
+    def clone(self):
+        return TerminalWidget({"environ": self._shell.environ.copy(),
+                               "real_cwd": self._shell.real_cwd.copy()})
 
     def set_hints(self, window):
         pad_x, pad_y = self._terminal.get_padding()
@@ -239,18 +242,15 @@ class TerminalWidget(object):
 
 class TerminalWindow(object):
 
-    def __init__(self):
+    def __init__(self, terminal):
         self._tabset = gtk.Notebook()
         self._tab_map = {}
         self._window = gtk.Window()
         self._window.add(self._tabset)
-        terminal = self._add_tab()
+        self._add_tab(terminal)
         self._tabset.set_show_border(False)
         self._tabset.show_all()
         terminal.set_hints(self._window)
-        self._window.connect(
-            "popup_menu",
-            lambda widget: self._make_menu().popup(None, None, None, 0, 0))
         self._window.connect("hide", self._on_hidden)
 
     def _on_hidden(self, widged_unused):
@@ -268,11 +268,12 @@ class TerminalWindow(object):
     def _make_menu(self):
         menu = gtk.Menu()
         item = gtk.MenuItem("Open _Terminal")
-        item.connect("activate",
-                     lambda *args: TerminalWindow().get_widget().show_all())
+        def new_window(*args):
+            TerminalWindow(tab.clone()).get_widget().show_all()
+        item.connect("activate", new_window)
         menu.add(item)
         item = gtk.MenuItem("Open Ta_b")
-        item.connect("activate", lambda *args: self._add_tab())
+        item.connect("activate", lambda *args: self._add_tab(tab.clone()))
         menu.add(item)
         tab_widget = self._tabset.get_nth_page(self._tabset.get_current_page())
         tab = self._tab_map[tab_widget]
@@ -284,8 +285,7 @@ class TerminalWindow(object):
     def _update_tabs(self):
         self._tabset.set_show_tabs(len(self._tab_map) > 1)
 
-    def _add_tab(self):
-        terminal = TerminalWidget()
+    def _add_tab(self, terminal):
         tab_widget = terminal.get_widget()
         self._tab_map[tab_widget] = terminal
         self._update_tabs()
@@ -297,6 +297,9 @@ class TerminalWindow(object):
         self._tabset.set_tab_reorderable(tab_widget, True)
         terminal.get_terminal_widget().connect("button_press_event",
                                                self._menu_click)
+        terminal.get_terminal_widget().connect(
+            "popup_menu",
+            lambda widget: self._make_menu().popup(None, None, None, 0, 0))
 
         def remove_tab():
             self._tabset.remove_page(self._tabset.page_num(tab_widget))
@@ -306,14 +309,17 @@ class TerminalWindow(object):
                 self._window.destroy()
 
         terminal.add_finished_handler(remove_tab)
-        return terminal
 
     def get_widget(self):
         return self._window
 
 
+def make_terminal():
+    return TerminalWindow(TerminalWidget({}))
+
+
 def main():
-    TerminalWindow().get_widget().show_all()
+    make_terminal().get_widget().show_all()
     gtk.main()
 
 

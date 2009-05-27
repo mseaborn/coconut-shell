@@ -22,6 +22,7 @@ import unittest
 
 import gobject
 
+import tempdir_test
 import terminal
 
 
@@ -48,22 +49,31 @@ def make_template():
     return {"get_prompt": lambda: "$ "}
 
 
-class TerminalTest(unittest.TestCase):
+class TerminalTest(tempdir_test.TempDirTestCase):
 
     def test_gui_instantiation(self):
-        terminal.TerminalWindow()
+        terminal.make_terminal()
 
     def test_terminal_contents(self):
-        vte = terminal.TerminalWidget(make_template).get_terminal_widget()
+        vte = terminal.TerminalWidget(make_template()).get_terminal_widget()
         screen = "".join(get_vte_text(vte)).rstrip("\n")
         self.assertEquals(screen, "$ ")
 
     def test_command_output(self):
-        term = terminal.TerminalWidget(make_template)
+        term = terminal.TerminalWidget(make_template())
         term._current_reader("echo hello\n")
         gobject.main_context_default().iteration(False)
         screen = "".join(get_vte_text(term.get_terminal_widget())).rstrip("\n")
         self.assertEquals(screen, "$ echo hello\nhello\n$ ")
+
+    def test_clone(self):
+        temp_dir = self.make_temp_dir()
+        term1 = terminal.TerminalWidget(make_template())
+        term1._shell.cwd.chdir(temp_dir)
+        term2 = term1.clone()
+        self.assertEquals(term2._shell.cwd.get_cwd(), temp_dir)
+        self.assertEquals(term2._shell.environ["PWD"], temp_dir)
+        assert term1._shell.environ is not term2._shell.environ
 
 
 if __name__ == "__main__":
