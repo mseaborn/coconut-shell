@@ -240,7 +240,7 @@ class TerminalWindow(object):
 
     def __init__(self):
         self._tabset = gtk.Notebook()
-        self._tabs = []
+        self._tab_map = {}
         self._window = gtk.Window()
         self._window.add(self._tabset)
         terminal = self._add_tab()
@@ -273,34 +273,35 @@ class TerminalWindow(object):
         item = gtk.MenuItem("Open Ta_b")
         item.connect("activate", lambda *args: self._add_tab())
         menu.add(item)
-        tab = self._tabs[self._tabset.get_current_page()]
+        tab_widget = self._tabset.get_nth_page(self._tabset.get_current_page())
+        tab = self._tab_map[tab_widget]
         for item in tab.get_menu_items():
             menu.add(item)
         menu.show_all()
         return menu
 
     def _update_tabs(self):
-        self._tabset.set_show_tabs(len(self._tabs) > 1)
+        self._tabset.set_show_tabs(len(self._tab_map) > 1)
 
     def _add_tab(self):
         terminal = TerminalWidget()
-        self._tabs.append(terminal)
+        tab_widget = terminal.get_widget()
+        self._tab_map[tab_widget] = terminal
         self._update_tabs()
-        index = self._tabset.append_page(terminal.get_widget(),
-                                         gtk.Label("Terminal"))
+        index = self._tabset.append_page(tab_widget, gtk.Label("Terminal"))
         # TODO: There is a bug whereby the new VteTerminal and its
         # scroll bar do not display correctly until it is resized or
         # it produces more output.
         self._tabset.set_current_page(index)
+        self._tabset.set_tab_reorderable(tab_widget, True)
         terminal.get_terminal_widget().connect("button_press_event",
                                                self._menu_click)
 
         def remove_tab():
-            index = self._tabs.index(terminal)
-            self._tabset.remove_page(index)
-            self._tabs.pop(index)
+            self._tabset.remove_page(self._tabset.page_num(tab_widget))
+            del self._tab_map[tab_widget]
             self._update_tabs()
-            if len(self._tabs) == 0:
+            if len(self._tab_map) == 0:
                 self._window.destroy()
 
         terminal.add_finished_handler(remove_tab)
