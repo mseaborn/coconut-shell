@@ -218,38 +218,48 @@ class TerminalWidget(object):
     def _exit(self):
         gtk.main_quit()
 
+    def get_menu_items(self):
+        item = gtk.MenuItem("Job To Background")
+        item.connect("activate", lambda *args: self._read_input())
+        return [item]
+
 
 class TerminalWindow(object):
 
     def __init__(self):
         self._tabset = gtk.Notebook()
-        self._tabs = 0
+        self._tabs = []
         self._window = gtk.Window()
         self._window.add(self._tabset)
         terminal = self._add_tab()
         self._tabset.set_show_border(False)
         self._tabset.show_all()
         terminal.set_hints(self._window)
-
-        self._menu = gtk.Menu()
-        item = gtk.MenuItem("Open _Tab")
-        item.connect("activate", lambda *args: self._add_tab())
-        self._menu.add(item)
-        self._menu.show_all()
         self._window.connect(
             "popup_menu",
-            lambda widget: self._menu.popup(None, None, None, 0, 0))
+            lambda widget: self._make_menu().popup(None, None, None, 0, 0))
 
     def _menu_click(self, widget_unused, event):
         if event.button == 3:
-            self._menu.popup(None, None, None, event.button, event.time)
+            self._make_menu().popup(None, None, None, event.button, event.time)
             return True
         return False
 
+    def _make_menu(self):
+        menu = gtk.Menu()
+        item = gtk.MenuItem("Open _Tab")
+        item.connect("activate", lambda *args: self._add_tab())
+        menu.add(item)
+        tab = self._tabs[self._tabset.get_current_page()]
+        for item in tab.get_menu_items():
+            menu.add(item)
+        menu.show_all()
+        return menu
+
     def _add_tab(self):
-        self._tabs += 1
-        self._tabset.set_show_tabs(self._tabs > 1)
         terminal = TerminalWidget()
+        self._tabs.append(terminal)
+        self._tabset.set_show_tabs(len(self._tabs) > 1)
         index = self._tabset.append_page(terminal.get_widget(),
                                          gtk.Label("Terminal"))
         # TODO: There is a bug whereby the new VteTerminal and its
