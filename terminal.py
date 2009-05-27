@@ -34,6 +34,19 @@ import shell
 import shell_pyrepl
 
 
+class EventDistributor(object):
+
+    def __init__(self):
+        self._callbacks = []
+
+    def add(self, callback):
+        self._callbacks.append(callback)
+
+    def send(self, *args):
+        for callback in self._callbacks:
+            callback(*args)
+
+
 def openpty():
     master_fd, slave_fd = os.openpty()
     return os.fdopen(master_fd, "w"), os.fdopen(slave_fd, "w")
@@ -141,6 +154,8 @@ class TerminalWidget(object):
         palette = [gtk.gdk.Color(*colour) for colour in colours]
         self._terminal.set_colors(foreground, background, palette)
         self._hbox.show_all()
+        self._on_finished = EventDistributor()
+        self.add_finished_handler = self._on_finished.add
 
     def set_hints(self, window):
         pad_x, pad_y = self._terminal.get_padding()
@@ -186,7 +201,7 @@ class TerminalWidget(object):
                     try:
                         self._reader.do_cmd(cmd)
                     except EOFError:
-                        self._exit()
+                        self._on_finished.send()
         if self._reader.finished:
             self._reader.restore()
             self._process_input(self._reader.get_buffer())
@@ -214,9 +229,6 @@ class TerminalWidget(object):
         except Exception:
             traceback.print_exc()
         self._read_input()
-
-    def _exit(self):
-        gtk.main_quit()
 
     def get_menu_items(self):
         item = gtk.MenuItem("Job To Background")
@@ -256,10 +268,13 @@ class TerminalWindow(object):
         menu.show_all()
         return menu
 
+    def _update_tabs(self):
+        self._tabset.set_show_tabs(len(self._tabs) > 1)
+
     def _add_tab(self):
         terminal = TerminalWidget()
         self._tabs.append(terminal)
-        self._tabset.set_show_tabs(len(self._tabs) > 1)
+        self._update_tabs()
         index = self._tabset.append_page(terminal.get_widget(),
                                          gtk.Label("Terminal"))
         # TODO: There is a bug whereby the new VteTerminal and its
@@ -268,6 +283,17 @@ class TerminalWindow(object):
         self._tabset.set_current_page(index)
         terminal.get_terminal_widget().connect("button_press_event",
                                                self._menu_click)
+
+        def remove_tab():
+            index = self._tabs.index(terminal)
+            self._tabset.remove_page(index)
+            self._tabs.pop(index)
+            self._update_tabs()
+            if len(self._tabs) == 0:
+                self._window.destroy()
+                gtk.main_quit()
+
+        terminal.add_finished_handler(remove_tab)
         return terminal
 
     def get_widget(self):
