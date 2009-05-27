@@ -21,6 +21,7 @@
 import os
 import fcntl
 import struct
+import time
 import traceback
 
 import gobject
@@ -156,6 +157,8 @@ class TerminalWidget(object):
         self._hbox.show_all()
         self._on_finished = EventDistributor()
         self.add_finished_handler = self._on_finished.add
+        self._on_attention = EventDistributor()
+        self.add_attention_handler = self._on_attention.add
 
     def clone(self):
         return TerminalWidget({"environ": self._shell.environ.copy(),
@@ -232,12 +235,18 @@ class TerminalWidget(object):
             self._shell.run_job_command(line, fds, job_spawner)
         except Exception:
             traceback.print_exc()
+        self._on_attention.send()
         self._read_input()
 
     def get_menu_items(self):
         item = gtk.MenuItem("Job To Background")
         item.connect("activate", lambda *args: self._read_input())
         return [item]
+
+
+# Alert the user to completed commands that occur this much time after
+# the last input.
+ATTENTION_INPUT_DELAY = 1 # seconds
 
 
 class TerminalWindow(object):
@@ -252,6 +261,9 @@ class TerminalWindow(object):
         self._tabset.show_all()
         terminal.set_hints(self._window)
         self._window.connect("hide", self._on_hidden)
+        self._window.connect("key_press_event", self._clear_attention)
+        self._window.connect("focus_in_event", self._clear_attention)
+        self._tabset.connect("switch_page", self._on_switch_tab)
 
     def _on_hidden(self, widged_unused):
         self._window.destroy()
@@ -259,13 +271,28 @@ class TerminalWindow(object):
                    for window in gtk.window_list_toplevels()):
             gtk.main_quit()
 
-    def _menu_click(self, widget_unused, event):
+    def _get_current_tab(self):
+        tab_widget = self._tabset.get_nth_page(self._tabset.get_current_page())
+        return self._tab_map[tab_widget]
+
+    def _clear_attention(self, *args):
+        self._get_current_tab()["clear_attention"]()
+        self._window.set_urgency_hint(False)
+        return False
+
+    def _on_switch_tab(self, unused1, unused2, index):
+        self._tab_map[self._tabset.get_nth_page(index)]["clear_attention"]()
+        self._window.set_urgency_hint(False)
+
+    def _on_button_press(self, widget_unused, event):
+        self._clear_attention()
         if event.button == 3:
             self._make_menu().popup(None, None, None, event.button, event.time)
             return True
         return False
 
     def _make_menu(self):
+        tab = self._get_current_tab()["terminal"]
         menu = gtk.Menu()
         item = gtk.MenuItem("Open _Terminal")
         def new_window(*args):
@@ -275,8 +302,6 @@ class TerminalWindow(object):
         item = gtk.MenuItem("Open Ta_b")
         item.connect("activate", lambda *args: self._add_tab(tab.clone()))
         menu.add(item)
-        tab_widget = self._tabset.get_nth_page(self._tabset.get_current_page())
-        tab = self._tab_map[tab_widget]
         for item in tab.get_menu_items():
             menu.add(item)
         menu.show_all()
@@ -287,16 +312,26 @@ class TerminalWindow(object):
 
     def _add_tab(self, terminal):
         tab_widget = terminal.get_widget()
-        self._tab_map[tab_widget] = terminal
+
+        def clear_attention():
+            label.set_markup(label_text)
+            tab["last_input_time"] = time.time()
+
+        tab = {"terminal": terminal,
+               "clear_attention": clear_attention,
+               "last_input_time": time.time()}
+        self._tab_map[tab_widget] = tab
         self._update_tabs()
-        index = self._tabset.append_page(tab_widget, gtk.Label("Terminal"))
+        label_text = "Terminal"
+        label = gtk.Label(label_text)
+        index = self._tabset.append_page(tab_widget, label)
         # TODO: There is a bug whereby the new VteTerminal and its
         # scroll bar do not display correctly until it is resized or
         # it produces more output.
         self._tabset.set_current_page(index)
         self._tabset.set_tab_reorderable(tab_widget, True)
         terminal.get_terminal_widget().connect("button_press_event",
-                                               self._menu_click)
+                                               self._on_button_press)
         terminal.get_terminal_widget().connect(
             "popup_menu",
             lambda widget: self._make_menu().popup(None, None, None, 0, 0))
@@ -308,7 +343,15 @@ class TerminalWindow(object):
             if len(self._tab_map) == 0:
                 self._window.destroy()
 
+        def set_attention():
+            if time.time() > tab["last_input_time"] + ATTENTION_INPUT_DELAY:
+                self._window.set_urgency_hint(True)
+                # Only highlight tabs other than the current one.
+                if self._get_current_tab() != tab:
+                    label.set_markup("<b>%s</b>" % label_text)
+
         terminal.add_finished_handler(remove_tab)
+        terminal.add_attention_handler(set_attention)
 
     def get_widget(self):
         return self._window
