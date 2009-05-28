@@ -630,6 +630,7 @@ class ReadlineReader(object):
             # recomputing the matches for each match, so it can take
             # O(n^2) time overall.  We could cache but it's not worth the
             # bother.
+            import readline
             context = readline.get_line_buffer()[:readline.get_begidx()]
             matches = list(self._completer(context, string))
             if index < len(matches):
