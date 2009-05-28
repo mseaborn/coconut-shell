@@ -479,13 +479,31 @@ class LogicalCwd(object):
 
 
 def remove_prefix(prefix, string):
-    assert string.startswith(prefix)
+    assert string.startswith(prefix), (prefix, string)
     return string[len(prefix):]
+
+
+def complete_prefix_filename(filename):
+    # We don't use glob for this because glob will collapse multiple
+    # trailing slashes.  e.g. glob("foo//*") -> ["foo/bar"].
+    # Also, we don't want stars in the filename to be interpreted by glob.
+    if "/" in filename:
+        index = filename.rindex("/") + 1
+        dir_name = filename[:index]
+        leaf_prefix = filename[index:]
+        leaves = os.listdir(dir_name)
+    else:
+        dir_name = ""
+        leaf_prefix = filename
+        leaves = os.listdir(".")
+    for leaf in leaves:
+        if leaf.startswith(leaf_prefix):
+            yield dir_name + leaf
 
 
 def complete_path_command(path, prefix):
     for dir_path in path.split(":"):
-        for filename in glob.glob("%s/%s*" % (dir_path, prefix)):
+        for filename in complete_prefix_filename("%s/%s" % (dir_path, prefix)):
             try:
                 st = os.stat(filename)
             except OSError:
@@ -497,7 +515,7 @@ def complete_path_command(path, prefix):
 
 def complete_filename(string):
     filename, reverse_expansion = expanduser(string)
-    for filename in glob.glob(filename + "*"):
+    for filename in complete_prefix_filename(filename):
         if os.path.isdir(filename):
             # This treats symlinks to directories differently from Bash,
             # but this might be considered an improvement.
@@ -506,11 +524,11 @@ def complete_filename(string):
             yield reverse_expansion(filename)
 
 
-def readline_complete(cwd, context, string):
+def readline_complete(cwd, environ, context, string):
     def func():
         names = set()
         if context.strip() == "":
-            names.update(complete_path_command(os.environ["PATH"], string))
+            names.update(complete_path_command(environ.get("PATH", ""), string))
         names.update(complete_filename(string))
         return sorted(names)
     return cwd.relative_op(func)
@@ -550,7 +568,7 @@ def make_shell(parts):
     parts.setdefault("cwd", LogicalCwd(parts["real_cwd"], parts["environ"]))
     parts.setdefault("get_prompt", make_get_prompt(parts["cwd"]))
     parts.setdefault("completer", functools.partial(
-            readline_complete, parts["real_cwd"]))
+            readline_complete, parts["real_cwd"], parts["environ"]))
     parts.setdefault("builtins", {})
     parts["builtins"]["cd"] = make_chdir_builtin(parts["cwd"], parts["environ"])
     parts["builtins"].update(parts["job_controller"].get_builtins())

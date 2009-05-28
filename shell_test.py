@@ -78,8 +78,10 @@ def default_fds():
     return {0: sys.stdin, 1: sys.stdout, 2: sys.stderr}
 
 
-def make_shell():
-    parts = {"job_spawner": jobcontrol.SimpleJobSpawner()}
+def make_shell(parts=None):
+    if parts is None:
+        parts = {}
+    parts["job_spawner"] = jobcontrol.SimpleJobSpawner()
     return shell.Shell(parts)
 
 
@@ -284,6 +286,24 @@ class ShellTests(tempdir_test.TempDirTestCase):
                           ["file", "program1", "program2"])
         self.assertEquals(completer("cmd", ""),
                           ["file"])
+
+    def test_filename_completion_with_trailing_slash(self):
+        test_dir = self.make_temp_dir()
+        write_file(os.path.join(test_dir, "foo-file"), "")
+        sh = make_shell()
+        # Preserving trailing slashes when completing is important
+        # because pyrepl's completion will not remove characters.
+        self.assertEquals(sh.completer("cmd", test_dir + "///"),
+                          [test_dir + "///" + "foo-file"])
+
+    def test_command_completion_with_trailing_slash(self):
+        bin_dir = self.make_temp_dir()
+        write_file(os.path.join(bin_dir, "program1"), "")
+        os.chmod(os.path.join(bin_dir, "program1"), 0555)
+        sh = make_shell({"environ": {"PATH": bin_dir + "/"},
+                         "real_cwd": shell.LocalCwdTracker()})
+        sh.real_cwd.chdir(self.make_temp_dir())
+        self.assertEquals(sh.completer("", ""), ["program1"])
 
     def test_fds_not_leaked(self):
         data = self.command_output("ls /proc/self/fd")
