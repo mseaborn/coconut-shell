@@ -142,9 +142,11 @@ class TerminalWidget(object):
         self._reader = shell_pyrepl.Reader(
             self._shell.get_prompt, self._shell.completer, self._console)
         self._current_reader = None
+        self._current_resizer = lambda: None
         self._read_input()
 
         self._terminal.connect("commit", self._on_user_input)
+        self._terminal.connect("size_allocate", self._on_size_change)
         scrollbar = gtk.VScrollbar()
         scrollbar.set_adjustment(self._terminal.get_adjustment())
         self._hbox = gtk.HBox()
@@ -189,9 +191,15 @@ class TerminalWidget(object):
         self._reader.prepare()
         self._reader.refresh()
         self._current_reader = self._on_readline_input
+        self._current_resizer = lambda: None
 
     def _on_user_input(self, widget_unused, data, size):
         self._current_reader(data)
+
+    def _on_size_change(self, *args):
+        self._console.width = self._terminal.get_column_count()
+        self._console.height = self._terminal.get_row_count()
+        self._current_resizer()
 
     def _on_readline_input(self, data):
         # This is pretty ugly.  This mixture of push and pull driven
@@ -215,15 +223,19 @@ class TerminalWidget(object):
 
     def _process_input(self, line):
         master_fd, slave_fd = openpty()
-        set_terminal_size(slave_fd, self._terminal.get_column_count(),
-                          self._terminal.get_row_count())
         forward_output_to_terminal(master_fd, self._terminal)
 
         def on_input(data):
             os.write(master_fd.fileno(), data)
 
+        def update_size():
+            set_terminal_size(slave_fd, self._terminal.get_column_count(),
+                              self._terminal.get_row_count())
+
         def to_foreground():
             self._current_reader = on_input
+            self._current_resizer = update_size
+            update_size()
 
         fds = {0: slave_fd, 1: slave_fd, 2: slave_fd}
         to_foreground()
