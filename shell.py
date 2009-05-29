@@ -487,18 +487,22 @@ def complete_prefix_filename(filename):
     # We don't use glob for this because glob will collapse multiple
     # trailing slashes.  e.g. glob("foo//*") -> ["foo/bar"].
     # Also, we don't want stars in the filename to be interpreted by glob.
-    if "/" in filename:
-        index = filename.rindex("/") + 1
-        dir_name = filename[:index]
-        leaf_prefix = filename[index:]
-        leaves = os.listdir(dir_name)
-    else:
-        dir_name = ""
-        leaf_prefix = filename
-        leaves = os.listdir(".")
-    for leaf in leaves:
-        if leaf.startswith(leaf_prefix):
-            yield dir_name + leaf
+    try:
+        if "/" in filename:
+            index = filename.rindex("/") + 1
+            dir_name = filename[:index]
+            leaf_prefix = filename[index:]
+            leaves = os.listdir(dir_name)
+        else:
+            dir_name = ""
+            leaf_prefix = filename
+            leaves = os.listdir(".")
+        for leaf in leaves:
+            if leaf.startswith(leaf_prefix):
+                yield dir_name + leaf
+    except OSError:
+        # Ignore non-existent directories.
+        pass
 
 
 def complete_path_command(path, prefix):

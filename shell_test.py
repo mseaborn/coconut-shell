@@ -305,6 +305,13 @@ class ShellTests(tempdir_test.TempDirTestCase):
         sh.real_cwd.chdir(self.make_temp_dir())
         self.assertEquals(sh.completer("", ""), ["program1"])
 
+    def test_completion_on_non_existent_directory(self):
+        empty_dir = self.make_temp_dir()
+        sh = make_shell({"environ": {"PATH": empty_dir},
+                         "real_cwd": shell.LocalCwdTracker()})
+        sh.real_cwd.chdir(empty_dir)
+        self.assertEquals(sh.completer("", "foo/"), [])
+
     def test_fds_not_leaked(self):
         data = self.command_output("ls /proc/self/fd")
         # FD 3 is the directory FD opened to list the directory.
