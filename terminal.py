@@ -223,6 +223,11 @@ class TerminalWidget(object):
 
     def _process_input(self, line):
         master_fd, slave_fd = openpty()
+        # Setting O_NONBLOCK shouldn't be necessary, but poll() will
+        # sometimes report the FD as ready to read when reading it
+        # will block.
+        fcntl.fcntl(master_fd, fcntl.F_SETFL,
+                    fcntl.fcntl(master_fd, fcntl.F_GETFL) | os.O_NONBLOCK)
         forward_output_to_terminal(master_fd, self._terminal)
 
         def on_input(data):
