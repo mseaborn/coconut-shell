@@ -30,6 +30,7 @@ class Reader(pyrepl.historical_reader.HistoricalReader,
         self._get_prompt = get_prompt
         self._completer = completer
         super(Reader, self).__init__(*args)
+        self.wrap_marker = ""
 
     def get_prompt(self, lineno, cursor_on_line):
         return self._get_prompt()
