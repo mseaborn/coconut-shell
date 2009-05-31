@@ -156,6 +156,7 @@ class TerminalWidget(object):
         background = gtk.gdk.Color(0xffff, 0xffff, 0xffff)
         palette = [gtk.gdk.Color(*colour) for colour in colours]
         self._terminal.set_colors(foreground, background, palette)
+        self._terminal.set_scrollback_lines(4000)
         self._hbox.show_all()
         self._on_finished = EventDistributor()
         self.add_finished_handler = self._on_finished.add
