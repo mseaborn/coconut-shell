@@ -135,8 +135,9 @@ class TerminalWidget(object):
         # Need ASCII_DELETE rather than ASCII_BACKSPACE if we want
         # Alt-Backspace to work.
         self._terminal.set_backspace_binding(VTE_ERASE_ASCII_DELETE)
+        self._writer = JobMessageOutput(self._terminal)
         self._console = VTEConsole(self._terminal)
-        parts["job_output"] = JobMessageOutput(self._terminal)
+        parts["job_output"] = self._writer
         parts["job_tty"] = None
         parts["job_spawner"] = None # There is no single job spawner.
         environ = os.environ.copy()
@@ -257,7 +258,7 @@ class TerminalWidget(object):
             # TODO: don't run a nested event loop here.
             self._shell.run_job_command(line, fds, job_spawner)
         except Exception:
-            traceback.print_exc()
+            self._writer.write("".join(traceback.format_exc()))
         self._on_attention.send()
         self._read_input()
 
