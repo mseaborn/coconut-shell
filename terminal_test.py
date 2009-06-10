@@ -16,6 +16,7 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
 # 02110-1301 USA.
 
+import os
 import subprocess
 import time
 import unittest
@@ -52,6 +53,29 @@ def make_template():
 class TerminalTest(tempdir_test.TempDirTestCase):
 
     def test_gui_instantiation(self):
+        terminal.make_terminal()
+
+    def test_not_using_enclosing_tty(self):
+        saved_fds = [os.dup(fd) for fd in (0, 1, 2)]
+        try:
+            for fd in (0, 1, 2):
+                os.close(fd)
+            terminal.make_terminal()
+        finally:
+            for orig_fd, saved_fd in enumerate(saved_fds):
+                os.dup2(saved_fd, orig_fd)
+
+    def test_not_using_tty_size_env_vars(self):
+        if "LINES" in os.environ:
+            del os.environ["LINES"]
+        if "COLUMNS" in os.environ:
+            del os.environ["COLUMNS"]
+        terminal.make_terminal()
+
+    def test_not_using_term_env_var(self):
+        # Note that os.environ.pop() does not work.
+        if "TERM" in os.environ:
+            del os.environ["TERM"]
         terminal.make_terminal()
 
     def test_terminal_contents(self):

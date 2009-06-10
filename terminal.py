@@ -21,6 +21,7 @@
 import os
 import fcntl
 import struct
+import termios
 import time
 import traceback
 
@@ -53,24 +54,20 @@ def openpty():
     return os.fdopen(master_fd, "w"), os.fdopen(slave_fd, "w")
 
 
-# Monkey patch pyrepl.unix_console.
-# Using TCSADRAIN blocks, causing a deadlock.
-import termios
-termios.TCSADRAIN = termios.TCSANOW
-pyrepl.unix_console.tcsetattr = lambda *args: None
-
-
 class VTEConsole(pyrepl.unix_console.UnixConsole):
 
     def __init__(self, terminal):
         self._terminal = terminal
-        pyrepl.unix_console.UnixConsole.__init__(self)
+        pyrepl.unix_console.UnixConsole.__init__(self, f_in=None, term="xterm")
 
     # TODO: Don't use __ attributes in UnixConsole
     def flushoutput(self):
         for text, iscode in self._UnixConsole__buffer:
             self._terminal.feed(text.encode(self.encoding))
         del self._UnixConsole__buffer[:]
+
+    def _update_size(self):
+        pass
 
 
 class JobMessageOutput(object):
