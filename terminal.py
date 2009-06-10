@@ -163,6 +163,8 @@ class TerminalWidget(object):
         palette = [gtk.gdk.Color(*colour) for colour in colours]
         self._terminal.set_colors(foreground, background, palette)
         self._terminal.set_scrollback_lines(4000)
+        # VTE widget's default includes no punctuation.
+        self._terminal.set_word_chars("-A-Za-z0-9,./?%&#:_")
         self._hbox.show_all()
         self._on_finished = EventDistributor()
         self.add_finished_handler = self._on_finished.add
