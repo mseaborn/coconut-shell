@@ -350,7 +350,10 @@ class TerminalWindow(object):
         self._update_tabs()
         label_text = "Terminal"
         label = gtk.Label(label_text)
+        label.set_alignment(0, 0.5)
         index = self._tabset.append_page(tab_widget, label)
+        self._tabset.set_tab_label_packing(tab_widget, expand=True, fill=True,
+                                           pack_type=gtk.PACK_START)
         # TODO: There is a bug whereby the new VteTerminal and its
         # scroll bar do not display correctly until it is resized or
         # it produces more output.
