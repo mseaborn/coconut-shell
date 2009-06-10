@@ -23,6 +23,7 @@ import gc
 import glob
 import grp
 import itertools
+import optparse
 import os
 import pwd
 import signal
@@ -585,10 +586,15 @@ def make_shell(parts):
                                                       parts["builtins"]))
 
 
+def make_batch_shell():
+    parts = {}
+    parts["job_spawner"] = jobcontrol.SimpleJobSpawner()
+    return Shell(parts)
+
+
 class Shell(object):
 
     def __init__(self, parts):
-        self._parts = parts
         make_shell(parts)
         self.__dict__.update(parts)
 
@@ -647,7 +653,7 @@ class ReadlineReader(object):
             traceback.print_exc()
 
 
-def main():
+def interactive_main():
     shell = Shell({})
     fds = {FILENO_STDIN: sys.stdin,
            FILENO_STDOUT: sys.stdout,
@@ -681,6 +687,20 @@ def main():
     read_input()
     while should_run[0]:
         gobject.main_context_default().iteration()
+
+
+def main():
+    parser = optparse.OptionParser()
+    parser.add_option("-c", dest="command")
+    options, args = parser.parse_args()
+    if options.command is None:
+        interactive_main()
+    else:
+        fds = {FILENO_STDIN: sys.stdin,
+               FILENO_STDOUT: sys.stdout,
+               FILENO_STDERR: sys.stderr}
+        shell = make_batch_shell()
+        shell.run_command(options.command, fds)
 
 
 if __name__ == "__main__":

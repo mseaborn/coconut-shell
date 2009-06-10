@@ -19,6 +19,7 @@
 import errno
 import os
 import signal
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -443,6 +444,17 @@ class FDRedirectionTests(tempdir_test.TempDirTestCase):
         # the job at all, or record it in the jobs list properly.
         self.assertRaises(KeyError,
                           lambda: self.fds_for_command("foo >&123", {}))
+
+
+class CommandLineEntryPointTest(tempdir_test.TempDirTestCase):
+
+    def test_non_interactive(self):
+        proc = subprocess.Popen(["python", shell.__file__, "-c", "echo hello"],
+                                stdin=open(os.devnull, "w"),
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        stdout, stderr = proc.communicate()
+        self.assertEquals((proc.wait(), stdout, stderr),
+                          (0, "hello\n", ""))
 
 
 class IndependentCwdTests(tempdir_test.TempDirTestCase):
