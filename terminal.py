@@ -251,6 +251,16 @@ class TerminalWidget(object):
             self._current_resizer = update_size
             update_size()
 
+        def read_pending():
+            # Read pending data in case we received the process's exit
+            # status before reading from the tty in the main loop.
+            try:
+                data = os.read(master_fd.fileno(), 4096)
+            except OSError:
+                pass
+            else:
+                self._terminal.feed(data)
+
         fds = {0: slave_fd, 1: slave_fd, 2: slave_fd}
         to_foreground()
         job_spawner = jobcontrol.SessionJobSpawner(
@@ -262,6 +272,7 @@ class TerminalWidget(object):
         except Exception:
             self._writer.write("".join(traceback.format_exc()))
         self._on_attention.send()
+        read_pending()
         self._read_input()
 
     def get_menu_items(self):

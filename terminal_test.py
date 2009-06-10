@@ -16,6 +16,7 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
 # 02110-1301 USA.
 
+import itertools
 import os
 import subprocess
 import time
@@ -98,6 +99,16 @@ class TerminalTest(tempdir_test.TempDirTestCase):
         self.assertEquals(term2._shell.cwd.get_cwd(), temp_dir)
         self.assertEquals(term2._shell.environ["PWD"], temp_dir)
         assert term1._shell.environ is not term2._shell.environ
+
+    def test_reading_pending_data(self):
+        term = terminal.TerminalWidget(make_template())
+        term._terminal.set_size(100, 100)
+        data = "".join(itertools.islice((char for i in itertools.count()
+                                         for char in str(i)), 3000))
+        term._process_input("echo %s\n" % data)
+        gobject.main_context_default().iteration(False)
+        screen = "".join(get_vte_text(term.get_terminal_widget())).rstrip("\n")
+        self.assertEquals(screen, "$ " + data + "\n$ ")
 
     def test_term_variable(self):
         term = terminal.TerminalWidget({})
