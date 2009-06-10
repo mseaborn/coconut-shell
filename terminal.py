@@ -388,6 +388,7 @@ def make_terminal():
 
 
 def main():
+    gtk.window_set_default_icon_name("gnome-terminal")
     make_terminal().get_widget().show_all()
     gtk.main()
 
