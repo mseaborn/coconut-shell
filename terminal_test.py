@@ -99,6 +99,10 @@ class TerminalTest(tempdir_test.TempDirTestCase):
         self.assertEquals(term2._shell.environ["PWD"], temp_dir)
         assert term1._shell.environ is not term2._shell.environ
 
+    def test_term_variable(self):
+        term = terminal.TerminalWidget({})
+        self.assertEquals(term._shell.environ["TERM"], "xterm")
+
 
 if __name__ == "__main__":
     unittest.main()
