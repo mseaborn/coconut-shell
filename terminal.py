@@ -120,7 +120,11 @@ colours = [
 
 
 # Constants apparently missing from Python bindings.
+VTE_ERASE_AUTO = 0
 VTE_ERASE_ASCII_BACKSPACE = 1
+VTE_ERASE_ASCII_DELETE = 2
+VTE_ERASE_DELETE_SEQUENCE = 3
+VTE_ERASE_TTY = 4
 
 
 class TerminalWidget(object):
@@ -128,7 +132,9 @@ class TerminalWidget(object):
     def __init__(self, parts):
         self._terminal = vte.Terminal()
         # set_pty() seems to set up backspace, but we're not using it.
-        self._terminal.set_backspace_binding(VTE_ERASE_ASCII_BACKSPACE)
+        # Need ASCII_DELETE rather than ASCII_BACKSPACE if we want
+        # Alt-Backspace to work.
+        self._terminal.set_backspace_binding(VTE_ERASE_ASCII_DELETE)
         self._console = VTEConsole(self._terminal)
         parts["job_output"] = JobMessageOutput(self._terminal)
         parts["job_tty"] = None
