@@ -18,6 +18,7 @@
 
 import gobject
 
+import pyrepl.commands
 import pyrepl.completing_reader
 import pyrepl.historical_reader
 import pyrepl.unix_console
@@ -31,6 +32,9 @@ class Reader(pyrepl.historical_reader.HistoricalReader,
         self._completer = completer
         super(Reader, self).__init__(*args)
         self.wrap_marker = ""
+        # Override these to be no-ops.  Don't want to send self signals.
+        self.commands["suspend"] = pyrepl.commands.Command
+        self.commands["interrupt"] = pyrepl.commands.Command
 
     def get_prompt(self, lineno, cursor_on_line):
         return self._get_prompt()
