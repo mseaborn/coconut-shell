@@ -24,7 +24,7 @@ import threading
 import gobject
 
 import setsid_helper
-import shell
+import shell_spawn
 
 
 def make_pipe():
@@ -209,7 +209,7 @@ class SimpleJobSpawner(object):
         for spec in job_procs:
             spec["pgroup"] = NullProcessGroup()
             del spec
-        pids = map(shell.spawn_subprocess, job_procs)
+        pids = map(shell_spawn.spawn_subprocess, job_procs)
         # We must ensure that FDs are dropped before waiting.
         job_procs[:] = []
         if is_foreground:
@@ -230,7 +230,7 @@ class ProcessGroupJobSpawner(object):
         pids = []
         for spec in job_procs:
             spec["pgroup"] = pgroup
-            pids.append(shell.spawn_subprocess(spec))
+            pids.append(shell_spawn.spawn_subprocess(spec))
             del spec
         # We must ensure that FDs are dropped before any waiting.
         job_procs[:] = []

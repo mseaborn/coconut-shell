@@ -42,7 +42,7 @@ import termios
 import gobject
 
 import jobcontrol
-import shell
+import shell_spawn
 
 
 class NonOwningFDWrapper(object):
@@ -74,8 +74,8 @@ def spawn(specs, pipe_fd, tty_fd):
         spec["pgroup"] = pgroup
         spec["fds"] = dict((dest_fd, NonOwningFDWrapper(fd))
                             for dest_fd, fd in spec["fds"].iteritems())
-        pids.append(shell.spawn_subprocess(spec))
-    shell.close_fds([pipe_fd])
+        pids.append(shell_spawn.spawn_subprocess(spec))
+    shell_spawn.close_fds([pipe_fd])
     os.chdir("/") # Don't keep directory FD alive via cwd.
     pipe.write("%s\n" % repr(pids))
     while True:
@@ -88,7 +88,7 @@ def spawn(specs, pipe_fd, tty_fd):
 
 def reprable_spec(spec):
     spec = dict((key, value) for key, value in spec.iteritems()
-                if key in shell.subprocess_keys)
+                if key in shell_spawn.subprocess_keys)
     spec["fds"] = dict((dest_fd, fd.fileno())
                        for dest_fd, fd in spec["fds"].iteritems())
     if "cwd_fd" in spec:
@@ -110,7 +110,7 @@ def run(proc_specs, tty_fd, callback):
         argpipe_write.close()
         os.execv(sys.executable, argv)
 
-    helper_pid = shell.in_forked(in_subprocess)
+    helper_pid = shell_spawn.in_forked(in_subprocess)
     del argpipe_read
     del pipe_write
     # Forking and sending pids should be prompt, so we can block here.
