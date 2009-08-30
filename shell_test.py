@@ -589,6 +589,7 @@ class JobControlTests(unittest.TestCase):
         self.run_job_command(
             "true",
             std_fds(stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr))
+        self.dispatcher.once(may_block=True)
         self.job_controller.shell_to_foreground()
         self.assertEquals(self.job_controller.jobs.keys(), [])
         self.assert_messages([])
@@ -599,6 +600,7 @@ class JobControlTests(unittest.TestCase):
         self.run_job_command(
             command,
             std_fds(stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr))
+        self.dispatcher.once(may_block=True)
         self.job_controller.shell_to_foreground()
         jobs = self.job_controller.jobs
         self.assertEquals(jobs.keys(), [1])
@@ -662,6 +664,7 @@ class JobControlTests(unittest.TestCase):
         self.run_job_command(
             command,
             std_fds(stdin=sys.stdin, stdout=write_fd, stderr=sys.stderr))
+        self.dispatcher.once(may_block=True)
         self.assert_messages(["[1]+ Stopped  %s\n" % command])
         self.assertEquals(read_fd.read(), "start\n")
 
@@ -678,11 +681,13 @@ class JobControlTests(unittest.TestCase):
         self.run_job_command(
             "sh -c 'echo start; kill -STOP $$; echo done'",
             std_fds(stdin=sys.stdin, stdout=write_fd, stderr=sys.stderr))
+        self.dispatcher.once(may_block=True)
         self.assertEquals(read_fd.read(), "start\n")
 
         self.run_job_command(
             "fg", 
             std_fds(stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr))
+        self.dispatcher.once(may_block=True)
         try:
             os.waitpid(-1, os.WNOHANG | os.WUNTRACED)
         except OSError, exn:

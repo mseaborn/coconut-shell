@@ -87,7 +87,8 @@ class TerminalTest(tempdir_test.TempDirTestCase):
     def test_command_output(self):
         term = terminal.TerminalWidget(make_template())
         term._current_reader("echo hello\n")
-        gobject.main_context_default().iteration(False)
+        while term._shell.job_controller._awaiting_job is not None:
+            gobject.main_context_default().iteration(False)
         screen = "".join(get_vte_text(term.get_terminal_widget())).rstrip("\n")
         self.assertEquals(screen, "$ echo hello\nhello\n$ ")
 
@@ -106,7 +107,8 @@ class TerminalTest(tempdir_test.TempDirTestCase):
         data = "".join(itertools.islice((char for i in itertools.count()
                                          for char in str(i)), 3000))
         term._process_input("echo %s\n" % data)
-        gobject.main_context_default().iteration(False)
+        while term._shell.job_controller._awaiting_job is not None:
+            gobject.main_context_default().iteration(False)
         screen = "".join(get_vte_text(term.get_terminal_widget())).rstrip("\n")
         self.assertEquals(screen, "$ " + data + "\n$ ")
 

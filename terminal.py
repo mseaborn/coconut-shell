@@ -138,7 +138,9 @@ class TerminalWidget(object):
             self._shell.get_prompt, self._shell.completer, self._console)
         self._current_reader = None
         self._current_resizer = lambda: None
+        self._read_pending = lambda: None
         self._read_input()
+        self._shell.job_controller.add_done_handler(self._job_done)
 
         self._terminal.connect("commit", self._on_user_input)
         self._terminal.connect("size_allocate", self._on_size_change)
@@ -253,16 +255,20 @@ class TerminalWidget(object):
 
         fds = {0: slave_fd, 1: slave_fd, 2: slave_fd}
         to_foreground()
+        # TODO: Handle reading pending data from re-foregrounded jobs.
+        self._read_pending = read_pending
         job_spawner = jobcontrol.SessionJobSpawner(
             self._shell.wait_dispatcher, self._shell.job_controller, slave_fd,
             to_foreground)
         try:
-            # TODO: don't run a nested event loop here.
             self._shell.run_job_command(line, fds, job_spawner)
         except Exception:
             self._writer.write("".join(traceback.format_exc()))
+        self._shell.job_controller.check_for_done()
+
+    def _job_done(self):
         self._on_attention.send()
-        read_pending()
+        self._read_pending()
         self._read_input()
 
     def get_menu_items(self):

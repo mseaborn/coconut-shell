@@ -650,8 +650,9 @@ def interactive_main():
                 shell.run_command(line, fds)
             except Exception:
                 traceback.print_exc()
-            read_input()
+            shell.job_controller.check_for_done()
 
+    shell.job_controller.add_done_handler(read_input)
     read_input()
     while should_run[0]:
         gobject.main_context_default().iteration()

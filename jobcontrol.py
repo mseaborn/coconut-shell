@@ -226,10 +226,20 @@ class JobController(object):
         self._tty_fd = tty_fd
         self._state_changed = set()
         self.jobs = {}
+        self._awaiting_job = None
+        self._done_handlers = shell_event.EventDistributor()
+        self.add_done_handler = self._done_handlers.add
 
     def add_job(self, job, is_foreground):
         def on_state_change():
             self._state_changed.add((job_id, job))
+            if self._awaiting_job == job_id and job.state != "running":
+                if job.state == "finished":
+                    self._state_changed.remove((job_id, job))
+                    del self.jobs[job_id]
+                self._done_handlers.send()
+                self._awaiting_job = None
+
         job_id = max([0] + self.jobs.keys()) + 1
         self.jobs[job_id] = job
         job.add_state_change_handler(on_state_change)
@@ -238,14 +248,12 @@ class JobController(object):
         else:
             self._output.write("[%s] %i\n" % (job_id, job.pgid))
 
+    def check_for_done(self):
+        if self._awaiting_job is None:
+            self._done_handlers.send()
+
     def _wait_for_job(self, job_id, job):
-        while job.state == "running":
-            self._dispatcher.once(may_block=True)
-        if job.state == "finished":
-            # Don't print the state change message for the job
-            # that we have been waiting for.
-            self._state_changed.remove((job_id, job))
-            del self.jobs[job_id]
+        self._awaiting_job = job_id
 
     def shell_to_foreground(self):
         # The shell should never accidentally stop itself.
