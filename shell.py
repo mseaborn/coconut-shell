@@ -537,6 +537,8 @@ class History(object):
         db_path = os.path.join(shell_dir, "history.sqlite")
         is_new = not os.path.exists(db_path)
         self.sqldb = sqlite3.connect(db_path)
+        # Doing fsync() for every command is too slow.
+        self.sqldb.execute("PRAGMA synchronous = OFF")
         if is_new:
             self.sqldb.execute("""
 CREATE TABLE history (time, command, cwd_path, cwd_dev, cwd_ino)
