@@ -69,6 +69,45 @@ def set_up_fds(fds):
     close_fds(fds)
 
 
+class ProcessGroup(object):
+
+    def __init__(self, foreground, tty_fd):
+        self._pgid = None
+        self._foreground = foreground
+        self._tty_fd = tty_fd
+
+    def init_process(self, pid):
+        # This method needs to be called in both the parent and child
+        # processes to avoid race conditions.
+        if self._pgid is None:
+            self._pgid = pid
+        try:
+            os.setpgid(pid, self._pgid)
+        except OSError, exn:
+            # We get EACCES if the child process has already called
+            # execve(), by which time a second setpgid() is unnecessary.
+            if exn.errno != errno.EACCES:
+                raise
+        if self._foreground:
+            # We need to do this in the child process to avoid a race
+            # condition.
+            # Alternatively we could stop the child processes after
+            # forking them and restart them after changing settings.
+            try:
+                os.tcsetpgrp(self._tty_fd.fileno(), self._pgid)
+            except OSError:
+                pass
+
+    def get_pgid(self):
+        return self._pgid
+
+
+class NullProcessGroup(object):
+
+    def init_process(self, pid):
+        pass
+
+
 subprocess_keys = set(["args", "fds", "environ", "cwd_fd", "pgroup",
                        "uid", "gid", "groups"])
 
@@ -100,3 +139,8 @@ def spawn_subprocess(spec):
     pid = in_forked(in_subprocess)
     spec["pgroup"].init_process(pid)
     return pid
+
+
+def make_pipe():
+    read_fd, write_fd = os.pipe()
+    return os.fdopen(read_fd, "r", 0), os.fdopen(write_fd, "w", 0)

@@ -41,7 +41,6 @@ import termios
 
 import gobject
 
-import jobcontrol
 import shell_spawn
 
 
@@ -68,7 +67,7 @@ def spawn(specs, pipe_fd, tty_fd):
     os.setsid()
     # Set controlling tty.
     fcntl.ioctl(tty_fd, termios.TIOCSCTTY, 0)
-    pgroup = jobcontrol.ProcessGroup(True, NonOwningFDWrapper(tty_fd))
+    pgroup = shell_spawn.ProcessGroup(True, NonOwningFDWrapper(tty_fd))
     pids = []
     for spec in specs:
         spec["pgroup"] = pgroup
@@ -97,8 +96,8 @@ def reprable_spec(spec):
 
 
 def run(proc_specs, tty_fd, callback):
-    argpipe_read, argpipe_write = jobcontrol.make_pipe()
-    pipe_read, pipe_write = jobcontrol.make_pipe()
+    argpipe_read, argpipe_write = shell_spawn.make_pipe()
+    pipe_read, pipe_write = shell_spawn.make_pipe()
 
     proc_specs = map(reprable_spec, proc_specs)
     args_data = repr((proc_specs, pipe_write.fileno(), tty_fd.fileno()))

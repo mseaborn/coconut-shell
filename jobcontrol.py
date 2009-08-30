@@ -27,11 +27,6 @@ import setsid_helper
 import shell_spawn
 
 
-def make_pipe():
-    read_fd, write_fd = os.pipe()
-    return os.fdopen(read_fd, "r", 0), os.fdopen(write_fd, "w", 0)
-
-
 class WaitDispatcher(object):
 
     # glib currently does not support using WUNTRACED with waitpid()
@@ -43,7 +38,7 @@ class WaitDispatcher(object):
 
     def __init__(self):
         self._queue = []
-        read_fd, self._write_fd = make_pipe()
+        read_fd, self._write_fd = shell_spawn.make_pipe()
         def on_ready(*args):
             read_fd.read(1)
             while True:
@@ -159,55 +154,16 @@ class Job(object):
         self.state = "running"
 
 
-class ProcessGroup(object):
-
-    def __init__(self, foreground, tty_fd):
-        self._pgid = None
-        self._foreground = foreground
-        self._tty_fd = tty_fd
-
-    def init_process(self, pid):
-        # This method needs to be called in both the parent and child
-        # processes to avoid race conditions.
-        if self._pgid is None:
-            self._pgid = pid
-        try:
-            os.setpgid(pid, self._pgid)
-        except OSError, exn:
-            # We get EACCES if the child process has already called
-            # execve(), by which time a second setpgid() is unnecessary.
-            if exn.errno != errno.EACCES:
-                raise
-        if self._foreground:
-            # We need to do this in the child process to avoid a race
-            # condition.
-            # Alternatively we could stop the child processes after
-            # forking them and restart them after changing settings.
-            try:
-                os.tcsetpgrp(self._tty_fd.fileno(), self._pgid)
-            except OSError:
-                pass
-
-    def get_pgid(self):
-        return self._pgid
-
-
 state_map = {"running": "Running",
              "stopped": "Stopped",
              "finished": "Done"}
-
-
-class NullProcessGroup(object):
-
-    def init_process(self, pid):
-        pass
 
 
 class SimpleJobSpawner(object):
 
     def start_job(self, job_procs, is_foreground, cmd_text):
         for spec in job_procs:
-            spec["pgroup"] = NullProcessGroup()
+            spec["pgroup"] = shell_spawn.NullProcessGroup()
             del spec
         pids = map(shell_spawn.spawn_subprocess, job_procs)
         # We must ensure that FDs are dropped before waiting.
@@ -226,7 +182,7 @@ class ProcessGroupJobSpawner(object):
 
     # Start a job in a new process group but same session.
     def start_job(self, job_procs, is_foreground, cmd_text):
-        pgroup = ProcessGroup(is_foreground, self._tty_fd)
+        pgroup = shell_spawn.ProcessGroup(is_foreground, self._tty_fd)
         pids = []
         for spec in job_procs:
             spec["pgroup"] = pgroup
