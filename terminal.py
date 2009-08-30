@@ -34,20 +34,8 @@ import pyrepl.unix_console
 
 import jobcontrol
 import shell
+import shell_event
 import shell_pyrepl
-
-
-class EventDistributor(object):
-
-    def __init__(self):
-        self._callbacks = []
-
-    def add(self, callback):
-        self._callbacks.append(callback)
-
-    def send(self, *args):
-        for callback in self._callbacks:
-            callback(*args)
 
 
 def openpty():
@@ -167,9 +155,9 @@ class TerminalWidget(object):
         # VTE widget's default includes no punctuation.
         self._terminal.set_word_chars("-A-Za-z0-9,./?%&#:_")
         self._hbox.show_all()
-        self._on_finished = EventDistributor()
+        self._on_finished = shell_event.EventDistributor()
         self.add_finished_handler = self._on_finished.add
-        self._on_attention = EventDistributor()
+        self._on_attention = shell_event.EventDistributor()
         self.add_attention_handler = self._on_attention.add
 
     def clone(self):

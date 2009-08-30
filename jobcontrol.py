@@ -24,6 +24,7 @@ import threading
 import gobject
 
 import setsid_helper
+import shell_event
 import shell_spawn
 
 
@@ -99,7 +100,8 @@ class ChildProcess(object):
     def __init__(self, dispatcher, pid):
         self.pid = pid
         self.state = "running"
-        self._callbacks = []
+        self._status_handlers = shell_event.EventDistributor()
+        self.add_status_handler = self._status_handlers.add
         dispatcher.add_handler(pid, self._status_handler)
 
     def _status_handler(self, status):
@@ -107,11 +109,7 @@ class ChildProcess(object):
             self.state = "stopped"
         else:
             self.state = "finished"
-        for func in self._callbacks:
-            func(status)
-
-    def add_status_handler(self, callback):
-        self._callbacks.append(callback)
+        self._status_handlers.send(status)
 
 
 class Job(object):
@@ -122,7 +120,8 @@ class Job(object):
         self.state = "running"
         self.cmd_text = cmd_text
         self.to_foreground = to_foreground
-        self._callbacks = []
+        self._on_state_change = shell_event.EventDistributor()
+        self.add_state_change_handler = self._on_state_change.add
         for proc in self.procs:
             proc.add_status_handler(self._process_status_handler)
 
@@ -130,8 +129,7 @@ class Job(object):
         old_state = self.state
         self.state = self._get_state()
         if self.state != old_state:
-            for callback in self._callbacks:
-                callback()
+            self._on_state_change.send()
 
     def _get_state(self):
         if all(proc.state == "finished" for proc in self.procs):
@@ -140,9 +138,6 @@ class Job(object):
             return "running"
         else:
             return "stopped"
-
-    def add_state_change_handler(self, callback):
-        self._callbacks.append(callback)
 
     def send_signal(self, signal_number):
         os.kill(-self.pgid, signal_number)
