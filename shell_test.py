@@ -90,12 +90,15 @@ def run_command(command, fds):
     make_shell().run_command(command, fds)
 
 
-class ShellTests(tempdir_test.TempDirTestCase):
+class TestCase(tempdir_test.TempDirTestCase):
 
     def patch_env_var(self, key, value):
         old_value = os.environ.get(key)
         set_env_var(key, value)
         self.on_teardown(lambda: set_env_var(key, old_value))
+
+
+class ShellTests(TestCase):
 
     def command_output(self, command):
         write_stdout, read_stdout = make_fh_pair()
@@ -688,6 +691,18 @@ class JobControlTests(unittest.TestCase):
             self.fail("Expected ECHILD")
         self.assertEquals(read_fd.read(), "done\n")
         self.assert_messages([])
+
+
+class HistoryTest(TestCase):
+
+    def test_creating_database(self):
+        self.patch_env_var("HOME", self.make_temp_dir())
+        sh = make_shell({"history": shell.History()})
+        sh.run_command("true", {})
+        # Test instantiating the database object a second time.
+        history = shell.History()
+        cursor = history._sqldb.execute("SELECT command FROM history")
+        self.assertEquals(list(cursor), [("true",)])
 
 
 if __name__ == "__main__":

@@ -174,7 +174,8 @@ class TerminalWidget(object):
 
     def clone(self):
         return TerminalWidget({"environ": self._shell.environ.copy(),
-                               "real_cwd": self._shell.real_cwd.copy()})
+                               "real_cwd": self._shell.real_cwd.copy(),
+                               "history": self._shell.history})
 
     def set_hints(self, window):
         pad_x, pad_y = self._terminal.get_padding()
@@ -398,14 +399,15 @@ class TerminalWindow(object):
         return self._window
 
 
-def make_terminal():
-    return TerminalWindow(TerminalWidget({}))
+def make_terminal(parts):
+    return TerminalWindow(TerminalWidget(parts))
 
 
 def main():
     signal.signal(signal.SIGHUP, signal.SIG_IGN)
     gtk.window_set_default_icon_name("gnome-terminal")
-    make_terminal().get_widget().show_all()
+    parts = {"history": shell.History()}
+    make_terminal(parts).get_widget().show_all()
     gtk.main()
 
 

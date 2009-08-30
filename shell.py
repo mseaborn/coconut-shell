@@ -26,6 +26,7 @@ import os
 import pwd
 import signal
 import socket
+import sqlite3
 import string
 import sys
 import traceback
@@ -374,6 +375,9 @@ class LogicalCwd(object):
         self._cwd_tracker = cwd_tracker
         self._environ = environ
 
+    def get_cwd_fd(self):
+        return self._cwd_tracker.get_cwd_fd()
+
     # Bash uses PWD to remember the cwd pathname before symlink expansion.
     def chdir(self, path):
         if os.path.isabs(path):
@@ -506,12 +510,50 @@ def make_shell(parts):
         parts["builtins"].update(sudo_builtins)
     parts.setdefault("launcher", LauncherWithBuiltins(launcher,
                                                       parts["builtins"]))
+    parts.setdefault("history", DummyHistory())
 
 
 def make_batch_shell():
     parts = {}
     parts["job_spawner"] = jobcontrol.SimpleJobSpawner()
     return Shell(parts)
+
+
+class DummyHistory(object):
+
+    def add_command(self, line, cwd):
+        pass
+
+
+class History(object):
+
+    def __init__(self):
+        shell_dir = os.path.expanduser("~/.shell2")
+        try:
+            os.mkdir(shell_dir)
+        except OSError, exn:
+            if exn.errno != errno.EEXIST:
+                raise
+        db_path = os.path.join(shell_dir, "history.sqlite")
+        is_new = not os.path.exists(db_path)
+        self._sqldb = sqlite3.connect(db_path)
+        if is_new:
+            self._sqldb.execute("""
+CREATE TABLE history (time, command, cwd_path, cwd_dev, cwd_ino)
+""")
+
+    def add_command(self, line, cwd):
+        try:
+            cwd_path = cwd.get_cwd()
+        except:
+            cwd_path = ""
+        cwd_fd = cwd.get_cwd_fd()
+        cwd_stat = os.fstat(cwd_fd.fileno())
+        self._sqldb.execute("""
+INSERT INTO history (time, command, cwd_path, cwd_dev, cwd_ino)
+VALUES (datetime('now'), ?, ?, ?, ?)
+""", (line, cwd_path, cwd_stat.st_dev, cwd_stat.st_ino))
+        self._sqldb.commit()
 
 
 class Shell(object):
@@ -527,9 +569,11 @@ class Shell(object):
                 "cwd": self.real_cwd}
 
     def run_command(self, line, fds):
+        self.history.add_command(line, self.cwd)
         run_command(self.job_spawner, self.launcher, line, self._make_spec(fds))
 
     def run_job_command(self, line, fds, job_spawner):
+        self.history.add_command(line, self.cwd)
         run_command(job_spawner, self.launcher, line, self._make_spec(fds))
 
 
@@ -576,7 +620,7 @@ class ReadlineReader(object):
 
 
 def interactive_main():
-    shell = Shell({})
+    shell = Shell({"history": History()})
     fds = {FILENO_STDIN: sys.stdin,
            FILENO_STDOUT: sys.stdout,
            FILENO_STDERR: sys.stderr}

@@ -54,14 +54,14 @@ def make_template():
 class TerminalTest(tempdir_test.TempDirTestCase):
 
     def test_gui_instantiation(self):
-        terminal.make_terminal()
+        terminal.make_terminal({})
 
     def test_not_using_enclosing_tty(self):
         saved_fds = [os.dup(fd) for fd in (0, 1, 2)]
         try:
             for fd in (0, 1, 2):
                 os.close(fd)
-            terminal.make_terminal()
+            terminal.make_terminal({})
         finally:
             for orig_fd, saved_fd in enumerate(saved_fds):
                 os.dup2(saved_fd, orig_fd)
@@ -71,13 +71,13 @@ class TerminalTest(tempdir_test.TempDirTestCase):
             del os.environ["LINES"]
         if "COLUMNS" in os.environ:
             del os.environ["COLUMNS"]
-        terminal.make_terminal()
+        terminal.make_terminal({})
 
     def test_not_using_term_env_var(self):
         # Note that os.environ.pop() does not work.
         if "TERM" in os.environ:
             del os.environ["TERM"]
-        terminal.make_terminal()
+        terminal.make_terminal({})
 
     def test_terminal_contents(self):
         vte = terminal.TerminalWidget(make_template()).get_terminal_widget()
