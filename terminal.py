@@ -20,6 +20,7 @@
 
 import os
 import fcntl
+import signal
 import struct
 import termios
 import time
@@ -402,6 +403,7 @@ def make_terminal():
 
 
 def main():
+    signal.signal(signal.SIGHUP, signal.SIG_IGN)
     gtk.window_set_default_icon_name("gnome-terminal")
     make_terminal().get_widget().show_all()
     gtk.main()
