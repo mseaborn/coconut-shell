@@ -98,8 +98,9 @@ class RedirectFile(object):
         self._filename = filename
 
     def eval(self, spec):
+        filename = os.path.expanduser(self._filename)
         spec["fds"][self._dest_fd] = \
-            spec["cwd"].relative_op(lambda: open(self._filename, self._mode))
+            spec["cwd"].relative_op(lambda: open(filename, self._mode))
 
 
 def copy_spec(spec):

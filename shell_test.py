@@ -189,6 +189,13 @@ class ShellTests(tempdir_test.TempDirTestCase):
         # but that is inconsistent with the fallback for "cd", which
         # is to give an error.
 
+    def test_tilde_expansion_in_file_redirection(self):
+        home_dir = self.make_temp_dir()
+        write_file(os.path.join(home_dir, "foo"), "quux")
+        self.patch_env_var("HOME", home_dir)
+        output = self.command_output("cat < ~/foo")
+        self.assertEquals(output, "quux")
+
     def test_tilde_unexpansion(self):
         home_dir = "/my/home/town"
         self.patch_env_var("HOME", home_dir)
