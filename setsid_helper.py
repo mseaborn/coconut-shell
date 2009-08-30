@@ -97,20 +97,25 @@ def reprable_spec(spec):
 
 
 def run(proc_specs, tty_fd, callback):
+    argpipe_read, argpipe_write = jobcontrol.make_pipe()
     pipe_read, pipe_write = jobcontrol.make_pipe()
 
     proc_specs = map(reprable_spec, proc_specs)
-    args = (proc_specs, pipe_write.fileno(), tty_fd.fileno())
+    args_data = repr((proc_specs, pipe_write.fileno(), tty_fd.fileno()))
     # Exposes icky internal stuff in argv, visible in /proc.
     # Send across pipe instead?
-    argv = ["python", __file__, repr(args)]
+    argv = ["python", __file__, str(argpipe_read.fileno())]
 
     def in_subprocess():
+        argpipe_write.close()
         os.execv(sys.executable, argv)
 
     helper_pid = shell.in_forked(in_subprocess)
+    del argpipe_read
     del pipe_write
     # Forking and sending pids should be prompt, so we can block here.
+    argpipe_write.write(args_data)
+    argpipe_write.close()
     pids = eval(pipe_read.readline(), {})
 
     def on_ready(*args):
@@ -131,7 +136,10 @@ def run(proc_specs, tty_fd, callback):
 
 
 def main(args):
-    spawn(*eval(args[0], {}))
+    pipe = os.fdopen(int(args[0]), "r")
+    args_data = pipe.read()
+    pipe.close()
+    spawn(*eval(args_data, {}))
 
 
 if __name__ == "__main__":
