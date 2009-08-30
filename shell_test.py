@@ -701,7 +701,7 @@ class HistoryTest(TestCase):
         sh.run_command("true", {})
         # Test instantiating the database object a second time.
         history = shell.History()
-        cursor = history._sqldb.execute("SELECT command FROM history")
+        cursor = history.sqldb.execute("SELECT command FROM history")
         self.assertEquals(list(cursor), [("true",)])
 
 

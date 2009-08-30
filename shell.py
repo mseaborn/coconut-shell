@@ -536,9 +536,9 @@ class History(object):
                 raise
         db_path = os.path.join(shell_dir, "history.sqlite")
         is_new = not os.path.exists(db_path)
-        self._sqldb = sqlite3.connect(db_path)
+        self.sqldb = sqlite3.connect(db_path)
         if is_new:
-            self._sqldb.execute("""
+            self.sqldb.execute("""
 CREATE TABLE history (time, command, cwd_path, cwd_dev, cwd_ino)
 """)
 
@@ -549,11 +549,11 @@ CREATE TABLE history (time, command, cwd_path, cwd_dev, cwd_ino)
             cwd_path = ""
         cwd_fd = cwd.get_cwd_fd()
         cwd_stat = os.fstat(cwd_fd.fileno())
-        self._sqldb.execute("""
+        self.sqldb.execute("""
 INSERT INTO history (time, command, cwd_path, cwd_dev, cwd_ino)
 VALUES (datetime('now'), ?, ?, ?, ?)
 """, (line, cwd_path, cwd_stat.st_dev, cwd_stat.st_ino))
-        self._sqldb.commit()
+        self.sqldb.commit()
 
 
 class Shell(object):
