@@ -252,6 +252,9 @@ class JobController(object):
         if self._awaiting_job is None:
             self._done_handlers.send()
 
+    def stop_waiting(self):
+        self._awaiting_job = None
+
     def _wait_for_job(self, job_id, job):
         self._awaiting_job = job_id
 

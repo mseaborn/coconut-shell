@@ -260,6 +260,7 @@ class TerminalWidget(object):
         job_spawner = jobcontrol.SessionJobSpawner(
             self._shell.wait_dispatcher, self._shell.job_controller, slave_fd,
             to_foreground)
+        self._shell.job_controller.stop_waiting()
         try:
             self._shell.run_job_command(line, fds, job_spawner)
         except Exception:
