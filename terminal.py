@@ -33,6 +33,7 @@ import vte
 
 import pyrepl.unix_console
 
+import errorgui
 import jobcontrol
 import shell
 import shell_event
@@ -404,6 +405,7 @@ def main():
     gtk.window_set_default_icon_name("gnome-terminal")
     parts = {"history": shell.History()}
     make_terminal(parts).get_widget().show_all()
+    errorgui.set_excepthook()
     gtk.main()
 
 
