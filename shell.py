@@ -644,6 +644,9 @@ def interactive_main():
     def read_input():
         shell.job_controller.shell_to_foreground()
         shell.job_controller.print_messages()
+        if os.environ.get("TERM") == "xterm":
+            sys.stdout.write("\x1b]2;%s\x07" % shell.get_title())
+            sys.stdout.flush()
         reader.readline(process_input)
 
     def process_input(line):
