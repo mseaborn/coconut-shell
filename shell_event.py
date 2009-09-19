@@ -23,8 +23,46 @@ class EventDistributor(object):
         self._callbacks = []
 
     def add(self, callback):
+        def remover():
+            self._callbacks.remove(callback)
         self._callbacks.append(callback)
+        return remover
 
     def send(self, *args):
-        for callback in self._callbacks:
+        for callback in self._callbacks[:]:
             callback(*args)
+
+
+class ObservableCell(object):
+
+    def __init__(self, value):
+        self._on_change = EventDistributor()
+        self.add_observer = self._on_change.add
+        self._value = value
+
+    def set(self, value):
+        self._value = value
+        self._on_change.send()
+
+    def get(self):
+        return self._value
+
+
+class ObservableRedirector(object):
+
+    def __init__(self, obs):
+        self._on_change = EventDistributor()
+        self.add_observer = self._on_change.add
+        self._remove_old = lambda: None
+        self.set(obs)
+
+    def set(self, obs):
+        self._remove_old()
+        def on_change():
+            self._value = obs.get()
+            self._on_change.send()
+        on_change()
+        self._remove_old = obs.add_observer(on_change)
+
+    def get(self):
+        return self._value

@@ -19,6 +19,7 @@
 
 # Integrated terminal GUI and shell.
 
+import cgi
 import os
 import fcntl
 import signal
@@ -128,6 +129,7 @@ class TerminalWidget(object):
         self._terminal.set_backspace_binding(VTE_ERASE_ASCII_DELETE)
         self._writer = JobMessageOutput(self._terminal)
         self._console = VTEConsole(self._terminal)
+        self.title = shell_event.ObservableCell("")
         parts["job_output"] = self._writer
         parts["job_tty"] = None
         parts["job_spawner"] = None # There is no single job spawner.
@@ -195,6 +197,7 @@ class TerminalWidget(object):
         self._reader.refresh()
         self._current_reader = self._on_readline_input
         self._current_resizer = lambda: None
+        self.title.set(self._shell.get_prompt())
 
     def _on_user_input(self, widget_unused, data, size):
         self._current_reader(data)
@@ -285,6 +288,25 @@ class TerminalWidget(object):
 ATTENTION_INPUT_DELAY = 1 # seconds
 
 
+class TabLabel(object):
+
+    def __init__(self, text_obs):
+        self._attention = False
+        self._text = text_obs
+        self.widget = gtk.Label(text_obs.get())
+        text_obs.add_observer(self._update)
+
+    def _update(self):
+        text = cgi.escape(self._text.get())
+        if self._attention:
+            text = "<b>%s</b>" % text
+        self.widget.set_markup(text)
+
+    def set_attention(self, attention):
+        self._attention = attention
+        self._update()
+
+
 class TerminalWindow(object):
 
     def __init__(self, terminal):
@@ -292,6 +314,10 @@ class TerminalWindow(object):
         self._tab_map = {}
         self._window = gtk.Window()
         self._window.add(self._tabset)
+        self._title = shell_event.ObservableRedirector(
+            shell_event.ObservableCell(""))
+        self._title.add_observer(
+            lambda: self._window.set_title(self._title.get()))
         self._add_tab(terminal)
         self._tabset.set_show_border(False)
         self._tabset.show_all()
@@ -317,7 +343,9 @@ class TerminalWindow(object):
         return False
 
     def _on_switch_tab(self, unused1, unused2, index):
-        self._tab_map[self._tabset.get_nth_page(index)]["clear_attention"]()
+        tab = self._tab_map[self._tabset.get_nth_page(index)]
+        tab["clear_attention"]()
+        self._title.set(tab["terminal"].title)
         self._window.set_urgency_hint(False)
 
     def _on_button_press(self, widget_unused, event):
@@ -350,7 +378,7 @@ class TerminalWindow(object):
         tab_widget = terminal.get_widget()
 
         def clear_attention():
-            label.set_markup(label_text)
+            label.set_attention(False)
             tab["last_input_time"] = time.time()
 
         tab = {"terminal": terminal,
@@ -358,10 +386,10 @@ class TerminalWindow(object):
                "last_input_time": time.time()}
         self._tab_map[tab_widget] = tab
         self._update_tabs()
-        label_text = "Terminal"
-        label = gtk.Label(label_text)
-        label.set_alignment(0, 0.5)
-        index = self._tabset.append_page(tab_widget, label)
+        self._title.set(terminal.title)
+        label = TabLabel(terminal.title)
+        label.widget.set_alignment(0, 0.5)
+        index = self._tabset.append_page(tab_widget, label.widget)
         self._tabset.set_tab_label_packing(tab_widget, expand=True, fill=True,
                                            pack_type=gtk.PACK_START)
         # TODO: There is a bug whereby the new VteTerminal and its
@@ -387,7 +415,7 @@ class TerminalWindow(object):
                 self._window.set_urgency_hint(True)
                 # Only highlight tabs other than the current one.
                 if self._get_current_tab() != tab:
-                    label.set_markup("<b>%s</b>" % label_text)
+                    label.set_attention(True)
 
         terminal.add_finished_handler(remove_tab)
         terminal.add_attention_handler(set_attention)
