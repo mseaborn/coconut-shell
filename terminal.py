@@ -395,9 +395,6 @@ class TerminalWindow(object):
         index = self._tabset.append_page(tab_widget, label.widget)
         self._tabset.set_tab_label_packing(tab_widget, expand=True, fill=True,
                                            pack_type=gtk.PACK_START)
-        # TODO: There is a bug whereby the new VteTerminal and its
-        # scroll bar do not display correctly until it is resized or
-        # it produces more output.
         self._tabset.set_current_page(index)
         self._tabset.set_tab_reorderable(tab_widget, True)
         terminal.get_terminal_widget().connect("button_press_event",
