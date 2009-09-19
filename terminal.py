@@ -197,7 +197,7 @@ class TerminalWidget(object):
         self._reader.refresh()
         self._current_reader = self._on_readline_input
         self._current_resizer = lambda: None
-        self.title.set(self._shell.get_prompt())
+        self.title.set(self._shell.get_title())
 
     def _on_user_input(self, widget_unused, data, size):
         self._current_reader(data)

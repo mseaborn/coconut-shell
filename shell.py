@@ -471,18 +471,20 @@ def wrap_sudo(as_root, user):
     return {"sudo": sudo}, SudoLauncher(user, as_root)
 
 
-def make_get_prompt(cwd_tracker):
-    def get_prompt():
-        try:
-            cwd_path = unexpanduser(cwd_tracker.get_cwd())
-        except:
-            cwd_path = "?"
-        args = {"username": pwd.getpwuid(os.getuid()).pw_name,
-                "hostname": socket.gethostname(),
-                "cwd_path": cwd_path}
-        format = u"%(username)s@%(hostname)s:%(cwd_path)s$$ "
-        return (format % args).encode("utf-8")
-    return get_prompt
+def apply_format(cwd_tracker, format):
+    try:
+        cwd_path = unexpanduser(cwd_tracker.get_cwd())
+    except:
+        cwd_path = "?"
+    args = {"username": pwd.getpwuid(os.getuid()).pw_name,
+            "hostname": socket.gethostname(),
+            "cwd_path": cwd_path}
+    return (format % args).encode("utf-8")
+
+
+PROMPT_FORMAT = u"%(username)s@%(hostname)s:%(cwd_path)s$$ "
+
+TITLE_FORMAT = u"%(username)s@%(hostname)s: %(cwd_path)s"
 
 
 def make_shell(parts):
@@ -497,7 +499,10 @@ def make_shell(parts):
     parts.setdefault("environ", os.environ)
     parts.setdefault("real_cwd", GlobalCwdTracker())
     parts.setdefault("cwd", LogicalCwd(parts["real_cwd"], parts["environ"]))
-    parts.setdefault("get_prompt", make_get_prompt(parts["cwd"]))
+    parts.setdefault("get_prompt", functools.partial(
+            apply_format, parts["cwd"], PROMPT_FORMAT))
+    parts.setdefault("get_title", functools.partial(
+            apply_format, parts["cwd"], TITLE_FORMAT))
     parts.setdefault("completer", functools.partial(
             readline_complete, parts["real_cwd"], parts["environ"]))
     parts.setdefault("builtins", {})
