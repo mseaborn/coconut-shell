@@ -321,6 +321,7 @@ class TerminalWindow(object):
         self._add_tab(terminal)
         self._tabset.set_show_border(False)
         self._tabset.set_property("homogeneous", True)
+        self._tabset.set_scrollable(True)
         self._tabset.show_all()
         terminal.set_hints(self._window)
         self._window.connect("hide", self._on_hidden)
@@ -390,6 +391,7 @@ class TerminalWindow(object):
         self._title.set(terminal.title)
         label = TabLabel(terminal.title)
         label.widget.set_alignment(0, 0.5)
+        label.widget.set_ellipsize(True)
         index = self._tabset.append_page(tab_widget, label.widget)
         self._tabset.set_tab_label_packing(tab_widget, expand=True, fill=True,
                                            pack_type=gtk.PACK_START)
