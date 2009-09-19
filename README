@@ -1,0 +1,181 @@
+
+= Coconut Shell =
+
+Coconut Shell is a Bash-like command shell implemented in Python, with
+optional integrated terminal GUI.
+
+
+== Integrated shell + terminal ==
+
+Coconut Shell provides an integrated shell and terminal.  Unlike GUI
+shells like Hotwire, it is intended to look and behave just like Bash
+running under gnome-terminal, with the exception that additional
+features are provided through the GUI.
+
+How it works:
+
+ * It uses libvte to provide the terminal emulator widget.  This is
+   the same library that gnome-terminal uses.
+ * It uses Pyrepl (a replacement for GNU readline) to read lines from
+   the terminal.  This provides line editing and filename completion.
+ * It launches each command under a separate pty (pseudo-tty), and it
+   forwards output and input to and from the terminal widget.  This
+   helps prevent separate commands from interfering with each other.
+   Peculiarities of Unix job control mean that we need a helper
+   process (setsid_helper.py) to launch subprocesses with new
+   controlling ttys.
+
+
+== Requirements ==
+
+Dependencies for shell + terminal:
+ * Python 2.5
+ * python-gtk2
+ * python-vte (bindings for libvte)
+ * pyrepl, branch from http://github.com/mseaborn/pyrepl/
+
+The standalone shell has fewer dependencies.  It can use pyrepl, but
+will fall back to using readline if pyrepl is not available.  It
+requires python-gobject, but not python-gtk2.
+
+
+== Getting started ==
+
+Install dependencies:
+sudo apt-get install python-gtk2 python-vte
+
+Get development version of Pyrepl:
+git clone git://github.com/mseaborn/pyrepl.git pyrepl-repo
+ln -s pyrepo-repo/pyrepl pyrepl
+
+Run the terminal:
+python terminal.py
+
+Run the standalone shell:
+python shell.py
+
+
+== Features ==
+
+Advantages over Bash + separate terminal:
+
+ * Fast to start up.  Fast to open new tabs.
+
+ * Opening new tabs preserves the current directory without expanding
+   symlinks.  gnome-terminal tries to preserve the cwd but it gets it
+   from its subprocess's /proc/PID/cwd, which expands symlinks.
+
+ * Job completion notifications:  The terminal will highlight its
+   taskbar icon when a command completes (via a window manager hint),
+   similar to how Jabber clients highlight their icons when a new
+   message is received.  Tab labels are similarly highlighted.  This
+   is a killer feature for me.
+
+ * Command history is stored in an Sqlite database.  Unlike Bash's
+   command history, it does not get truncated (though of course you
+   can run an SQL statement to drop history), and it does not get lost
+   on a crash.  For context, it includes the time the command was run
+   and the current directory.
+
+ * Written in a high-level language, Python.  Easier to modify.  Less
+   likely to crash and take all terminal instances with it.
+
+ * "Job To Background" option in right-click menu:  Forces the current
+   job to the background.  Works even if the job has blocked all
+   signals (such as Ctrl-Z) - does not require the job's co-operation.
+
+ * Fake-Sudo feature:  If the shell is run as root and $SUDO_USER is
+   set, you get the following bonus feature:  Commands are run as the
+   user specified by $SUDO_USER, unless they are prefixed with "sudo",
+   in which case they are run as root.
+
+   This is a small step towards applying the principle of least
+   authority (POLA).  It is intended to protect you, the user, from
+   programs you run.
+
+   For some use cases, this can be more secure and more convenient
+   than the real "sudo" command.  Laxer sudo setups (with a non-zero
+   timeout or NOPASSWD) create a hole whereby non-root processes can
+   run commands as root; Coconut Shell's fake sudo avoids creating
+   this hole (though it would still be vulnerable to X11 keypress
+   injection).  Stricter sudo setups ask for passwords frequently;
+   Coconut Shell's fake sudo does not ask for a password.
+
+
+== Future plans ==
+
+There are a number of potential advantages that have not been realised yet:
+
+ * GUI integration.
+   - Listing jobs
+   - Filename completions in a pop-up window
+   - Searching through command history
+
+ * Running each job with a freshly-created controlling tty gives
+   potential benefits.
+   - Silencing backgrounded jobs so that their output does not go to
+     the terminal window.
+   - Recording command output by default.
+
+ * Examining shell state in GUI, e.g. environment variables
+
+ * Recording more job state:  time taken, command exit status.
+
+ * Integration of chroot and ssh.
+
+ * Integration of GNU screen.  This would simply require a way of
+   saving and restoring the VTE terminal widget's state.  Even that is
+   not strictly necessary if you don't mind losing the screen's
+   contents (e.g. as Xen's "xm console" will do).
+
+ * Integration with Plash, as a replacement for Plash's pola-shell.
+
+ * Extensibility in Python.  The hooks don't exist yet.
+
+
+== Missing shell features ==
+
+The main disadvantage of using this shell is that it lacks many of
+Bash's features.  Coconut Shell is intended to be an interactive
+shell, not a programming language.  For example, it lacks the "for"
+syntax.  This is not a big problem, because you can always do
+"bash -c '...'".
+
+This could be an argument for changing the design to run Bash as a
+subprocess, feeding it commands while keeping readline (Pyrepl) in the
+terminal.  However, I am ambivalent towards Bash's huge collection of
+features.
+
+Coconut Shell also lacks some of gnome-terminal's features, such as
+GUI configuration options.
+
+
+== Known bugs ==
+
+The terminal does not always display correctly when opening a new tab.
+This is a bug in the VTE widget (libvte).  Resizing the window or
+producing further output (e.g. by typing) makes the window display
+correctly.  This is fixed in newer versions of libvte (including
+0.20.5 in Ubuntu karmic).
+See <https://bugzilla.gnome.org/show_bug.cgi?id=594895>.
+
+The test suite sometimes fails non-deterministically.
+
+
+== Similar tools ==
+
+gsh - Quite old (from 1999).  Written in Tcl using Tk.  Implements its
+own terminal emulator.  Appears to feed commands to Bash.
+See <http://personal.atl.bellsouth.net/v/c/vcato/gsh/>.
+
+Hotwire - Quite different from Bash + a terminal.
+See <http://hotwire-shell.org> and <http://code.google.com/p/hotwire-shell/>.
+
+
+== Author ==
+
+Written by Mark Seaborn (mrs@mythic-beasts.com).
+
+Licence is GNU GPL v2 or later.
+
+Project home page:  http://github.com/mseaborn/shell2
