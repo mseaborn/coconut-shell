@@ -320,6 +320,7 @@ class TerminalWindow(object):
             lambda: self._window.set_title(self._title.get()))
         self._add_tab(terminal)
         self._tabset.set_show_border(False)
+        self._tabset.set_property("homogeneous", True)
         self._tabset.show_all()
         terminal.set_hints(self._window)
         self._window.connect("hide", self._on_hidden)
