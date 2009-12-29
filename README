@@ -42,7 +42,7 @@ requires python-gobject, but not python-gtk2.
 == Getting started ==
 
 Install dependencies:
-sudo apt-get install python-gtk2 python-vte
+sudo apt-get install python-pyparsing python-gtk2 python-vte
 
 Get development version of Pyrepl:
 git clone git://github.com/mseaborn/pyrepl.git pyrepl-repo
