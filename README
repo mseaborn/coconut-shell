@@ -162,6 +162,21 @@ See <https://bugzilla.gnome.org/show_bug.cgi?id=594895>.
 The test suite sometimes fails non-deterministically.
 
 
+== sudo's per-tty password check - workaround ==
+
+Often sudo is set up so that it does not ask for a password if the
+password has been entered recently.  But sometimes this only applies
+if the password was entered recently *on the same tty device*.
+Coconut Shell interferes with this because it creates a new tty device
+for every command rather than using one per terminal window.  This
+means that sudo will always ask for a password.
+
+To disable sudo's per-tty feature, add the following line to
+/etc/sudoers:
+
+Defaults        !tty_tickets   
+
+
 == Similar tools ==
 
 gsh - Quite old (from 1999).  Written in Tcl using Tk.  Implements its
