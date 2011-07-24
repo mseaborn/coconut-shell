@@ -325,7 +325,7 @@ class TerminalWindow(object):
         self._tabset.show_all()
         terminal.set_hints(self._window)
         self._window.connect("hide", self._on_hidden)
-        self._window.connect("key_press_event", self._clear_attention)
+        self._window.connect("key_press_event", self._key_pressed)
         self._window.connect("focus_in_event", self._clear_attention)
         self._tabset.connect("switch_page", self._on_switch_tab)
 
@@ -343,6 +343,27 @@ class TerminalWindow(object):
         self._get_current_tab()["clear_attention"]()
         self._window.set_urgency_hint(False)
         return False
+
+    def _check_for_keyboard_shortcuts(self, event):
+        if not (event.state & gtk.gdk.CONTROL_MASK):
+            return
+        elif (event.keyval == ord("T") and 
+            event.state & gtk.gdk.SHIFT_MASK):  # Ctrl-shift-T
+            tab = self._get_current_tab()["terminal"]
+            self._add_tab(tab.clone())
+            return True
+        elif event.keyval in [65365, 65366]:  # Ctrl-page up, Ctrl-page down
+            tab_index = self._tabset.get_current_page()
+            tab_count = self._tabset.get_n_pages()
+            direction = {65365: -1, 65366: 1}[event.keyval]
+            new_tab_index = (tab_index + direction) % tab_count  # May wrap
+            self._tabset.set_current_page(new_tab_index)
+            return True
+        return False
+
+    def _key_pressed(self, unused, event):
+        self._clear_attention()
+        return self._check_for_keyboard_shortcuts(event)
 
     def _on_switch_tab(self, unused1, unused2, index):
         tab = self._tab_map[self._tabset.get_nth_page(index)]
