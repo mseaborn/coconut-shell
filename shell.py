@@ -550,9 +550,8 @@ CREATE TABLE history (time, command, cwd_path, cwd_dev, cwd_ino)
 """)
 
     def __iter__(self):
-        cursor = self.sqldb.execute(
+        return self.sqldb.execute(
             "SELECT command, time, cwd_path FROM history ORDER BY time")
-        return iter(cursor)
 
     def add_command(self, line, cwd):
         if line.strip() == "":

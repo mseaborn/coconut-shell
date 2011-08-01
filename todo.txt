@@ -22,3 +22,4 @@ Done:
   - some redirection syntaxes remain to be done
 - prompts
   - but not configurable
+- save history

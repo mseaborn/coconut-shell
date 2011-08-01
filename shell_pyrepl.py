@@ -39,9 +39,11 @@ class Reader(pyrepl.historical_reader.HistoricalReader,
     def get_prompt(self, lineno, cursor_on_line):
         if (cursor_on_line and self.isearch_direction <> 
             pyrepl.historical_reader.ISEARCH_DIRECTION_NONE):
-            direction = ("forward" if self.isearch_direction == 
-                         pyrepl.historical_reader.ISEARCH_DIRECTION_FORWARDS 
-                         else "reverse")
+            if (self.isearch_direction == 
+                pyrepl.historical_reader.ISEARCH_DIRECTION_FORWARDS):
+                direction = "forward"
+            else:
+                direction = "reverse"
             return "(%s-i-search `%s'): " % (direction, self.isearch_term)
         else:
             return self._get_prompt()
