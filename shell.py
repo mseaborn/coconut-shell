@@ -549,7 +549,14 @@ class History(object):
 CREATE TABLE history (time, command, cwd_path, cwd_dev, cwd_ino)
 """)
 
+    def __iter__(self):
+        cursor = self.sqldb.execute(
+            "SELECT command, time, cwd_path FROM history ORDER BY time")
+        return iter(cursor)
+
     def add_command(self, line, cwd):
+        if line.strip() == "":
+            return
         try:
             cwd_path = cwd.get_cwd()
         except:
@@ -598,6 +605,7 @@ class ReadlineReader(object):
         readline.parse_and_bind("tab: complete")
         readline.set_completer(self._readline_complete_wrapper)
         readline.set_completer_delims(string.whitespace)
+        self.add_history = lambda line: readline.add_history(line)
 
     def readline(self, callback):
         try:
@@ -627,7 +635,8 @@ class ReadlineReader(object):
 
 
 def interactive_main():
-    shell = Shell({"history": History()})
+    history = History()
+    shell = Shell({"history": history})
     fds = {FILENO_STDIN: sys.stdin,
            FILENO_STDOUT: sys.stdout,
            FILENO_STDERR: sys.stderr}
@@ -635,9 +644,12 @@ def interactive_main():
     try:
         import shell_pyrepl
         reader = shell_pyrepl.make_reader(shell.get_prompt, shell.completer)
+        reader.history = [command for command, time, cwd in history]
         print "using pyrepl"
     except ImportError:
         reader = ReadlineReader(shell.get_prompt, shell.completer)
+        for command, time, cwd in history:
+            reader.add_history(command)
         print "using readline (pyrepl not available)"
     should_run = [True]
 

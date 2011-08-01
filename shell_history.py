@@ -21,10 +21,7 @@ import shell
 
 
 def main():
-    sqldb = shell.History().sqldb
-    cursor = sqldb.execute(
-        "SELECT command, time, cwd_path FROM history ORDER BY time")
-    for command, time, cwd in cursor:
+    for command, time, cwd in shell.History():
         cwd = shell.unexpanduser(cwd)
         print "%s [%s]: %s" % (time, cwd, command)
 

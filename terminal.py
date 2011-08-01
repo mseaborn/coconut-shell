@@ -140,6 +140,8 @@ class TerminalWidget(object):
         self._shell = shell.Shell(parts)
         self._reader = shell_pyrepl.Reader(
             self._shell.get_prompt, self._shell.completer, self._console)
+        self._reader.history = [command for command, time, cwd 
+                                in shell.History()]
         self._current_reader = None
         self._current_resizer = lambda: None
         self._read_pending = lambda: None

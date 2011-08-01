@@ -1,6 +1,5 @@
 
 - nicer errors (from parser and for "command not found")
-- save history
 - {a,b} expansion, a kind of globbing
 - report non-zero status codes
 - within-argument quotes, e.g. --foo="bar"
