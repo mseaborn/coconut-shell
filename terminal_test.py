@@ -39,12 +39,18 @@ class TerminalSizeTest(unittest.TestCase):
         self.assertEquals(stdout, "456 123\n")
 
 
-def get_vte_text(vte_terminal):
+def watch_screen(term, expected, timeout=10):
     # VTE updates the terminal in the event loop after a
     # non-configurable timeout, so we have to work around that.
-    time.sleep(0.05)
-    gobject.main_context_default().iteration(False)
-    return vte_terminal.get_text(lambda *args: True)
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        time.sleep(0.05)
+        gobject.main_context_default().iteration(False)
+        vte_text = term.get_terminal_widget().get_text(lambda *args: True)
+        screen = "".join(vte_text).rstrip("\n")
+        if screen == expected:
+            break
+    return screen
 
 
 def make_template():
@@ -80,17 +86,18 @@ class TerminalTest(tempdir_test.TempDirTestCase):
         terminal.make_terminal({})
 
     def test_terminal_contents(self):
-        vte = terminal.TerminalWidget(make_template()).get_terminal_widget()
-        screen = "".join(get_vte_text(vte)).rstrip("\n")
-        self.assertEquals(screen, "$ ")
+        term = terminal.TerminalWidget(make_template()) 
+        expected = "$ "
+        screen = watch_screen(term, expected)
+        self.assertEquals(screen, expected)
 
     def test_command_output(self):
         term = terminal.TerminalWidget(make_template())
         term._current_reader("echo hello\n")
-        while term._shell.job_controller._awaiting_job is not None:
-            gobject.main_context_default().iteration(False)
-        screen = "".join(get_vte_text(term.get_terminal_widget())).rstrip("\n")
-        self.assertEquals(screen, "$ echo hello\nhello\n$ ")
+        r = term._current_reader
+        expected = "$ echo hello\nhello\n$ "
+        screen = watch_screen(term, expected)
+        self.assertEquals(screen, expected)
 
     def test_clone(self):
         temp_dir = self.make_temp_dir()
@@ -107,10 +114,9 @@ class TerminalTest(tempdir_test.TempDirTestCase):
         data = "".join(itertools.islice((char for i in itertools.count()
                                          for char in str(i)), 3000))
         term._process_input("echo %s\n" % data)
-        while term._shell.job_controller._awaiting_job is not None:
-            gobject.main_context_default().iteration(False)
-        screen = "".join(get_vte_text(term.get_terminal_widget())).rstrip("\n")
-        self.assertEquals(screen, "$ " + data + "\n$ ")
+        expected = "$ " + data + "\n$ "
+        screen = watch_screen(term, expected)
+        self.assertEquals(screen, expected)
 
     def test_term_variable(self):
         term = terminal.TerminalWidget({})

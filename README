@@ -159,8 +159,6 @@ correctly.  This is fixed in newer versions of libvte (including
 0.20.5 in Ubuntu karmic).
 See <https://bugzilla.gnome.org/show_bug.cgi?id=594895>.
 
-The test suite sometimes fails non-deterministically.
-
 
 == sudo's per-tty password check - workaround ==
 

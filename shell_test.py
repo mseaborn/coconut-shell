@@ -122,6 +122,8 @@ class ShellTests(TestCase):
         self.assertEquals(data, ". +\n")
 
     def test_pipeline(self):
+        # Ensure there is a current directory, sh fails without one.
+        os.chdir(self.make_temp_dir())
         data = self.command_output(
             "echo foo | sh -c 'echo open && cat && echo close'")
         self.assertEquals(data, "open\nfoo\nclose\n")
@@ -706,8 +708,8 @@ class HistoryTest(TestCase):
         sh.run_command("true", {})
         # Test instantiating the database object a second time.
         history = shell.History()
-        cursor = history.sqldb.execute("SELECT command FROM history")
-        self.assertEquals(list(cursor), [("true",)])
+        commands = [command for command, timestamp, path in history]
+        self.assertEquals(commands, ["true"])
 
 
 if __name__ == "__main__":
