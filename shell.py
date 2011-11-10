@@ -144,9 +144,9 @@ class JobExp(object):
 
 
 # TODO: doesn't handle backslash right
-double_quoted = parse.QuotedString(quoteChar='"', escChar='\\', multiline=True)
-single_quoted = parse.QuotedString(quoteChar="'", escChar='\\', multiline=True)
-quoted_argument = (double_quoted | single_quoted) \
+double_quoted_argument = parse.QuotedString(quoteChar='"', escChar='\\', multiline=True) \
+    .setParseAction(lambda text, loc, arg: ExpandStringArgument(get_one(arg)))
+single_quoted_argument = parse.QuotedString(quoteChar="'", escChar='\\', multiline=True) \
     .setParseAction(lambda text, loc, arg: StringArgument(get_one(arg)))
 
 special_chars = "|&\"'<>"
@@ -178,7 +178,8 @@ redirect_file = (redirect_lhs + parse.Word(bare_chars)) \
     .setParseAction(lambda text, loc, args: RedirectFile(args[0][0],
                                                          args[0][1], args[1]))
 
-argument = redirect_fd | redirect_file | bare_argument | quoted_argument
+argument = redirect_fd | redirect_file | bare_argument | \
+    single_quoted_argument | double_quoted_argument
 
 command = (argument + parse.ZeroOrMore(argument)) \
           .setParseAction(lambda text, loc, args: CommandExp(args))
