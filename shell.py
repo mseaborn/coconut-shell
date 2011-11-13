@@ -643,7 +643,8 @@ def interactive_main():
     signal.signal(signal.SIGINT, signal.SIG_IGN)
     try:
         import shell_pyrepl
-        reader = shell_pyrepl.make_reader(shell.get_prompt, shell.completer)
+        reader = shell_pyrepl.make_reader(shell.get_prompt, shell.completer, 
+                                          shell.cwd)
         reader.history = [command for command, time, cwd in history]
         print "using pyrepl"
     except ImportError:

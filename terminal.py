@@ -139,7 +139,8 @@ class TerminalWidget(object):
         parts.setdefault("real_cwd", shell.LocalCwdTracker())
         self._shell = shell.Shell(parts)
         self._reader = shell_pyrepl.Reader(
-            self._shell.get_prompt, self._shell.completer, self._console)
+            self._shell.get_prompt, self._shell.completer, self._shell.cwd, 
+            self._console)
         self._reader.history = [command for command, time, cwd 
                                 in shell.History()]
         self._current_reader = None
@@ -155,8 +156,8 @@ class TerminalWidget(object):
         self._hbox = gtk.HBox()
         self._hbox.pack_start(self._terminal, expand=True, fill=True)
         self._hbox.pack_start(scrollbar, expand=False)
-        foreground = gtk.gdk.Color(0, 0, 0)
-        background = gtk.gdk.Color(0xffff, 0xffff, 0xffff)
+        foreground = gtk.gdk.Color(0xffff, 0xffff, 0xffff)
+        background = gtk.gdk.Color(0, 0, 0)
         palette = [gtk.gdk.Color(*colour) for colour in colours]
         self._terminal.set_colors(foreground, background, palette)
         self._terminal.set_scrollback_lines(4000)

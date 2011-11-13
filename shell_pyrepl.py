@@ -17,7 +17,9 @@
 # 02110-1301 USA.
 
 import gobject
+import os
 
+import lscolors
 import pyrepl.commands
 import pyrepl.completing_reader
 import pyrepl.historical_reader
@@ -84,9 +86,12 @@ class complete(pyrepl.completing_reader.complete):
 class Reader(pyrepl.historical_reader.HistoricalReader,
              pyrepl.completing_reader.CompletingReader):
 
-    def __init__(self, get_prompt, completer, *args):
+    COLOR_CODES = lscolors.get_color_codes(os.environ)
+
+    def __init__(self, get_prompt, completer, cwd, *args):
         self._get_prompt = get_prompt
         self._completer = completer
+        self.cwd = cwd
         super(Reader, self).__init__(*args)
         self.wrap_marker = ""
         self.commands["complete"] = complete
@@ -125,7 +130,15 @@ class Reader(pyrepl.historical_reader.HistoricalReader,
             return buffer[index+1:self.pos]
 
     def get_completions(self, stem):
-        return list(self._completer(self._completion_context, stem))
+        def colorise_completion(completion):
+            completion_path = os.path.join(self.cwd.get_cwd(), completion)
+            color_code = lscolors.color_code_for_path(completion_path, 
+                                                      Reader.COLOR_CODES)
+            colored_completion = lscolors.ColoredString(completion)
+            colored_completion.set_color(color_code)
+            return colored_completion
+        return [colorise_completion(completion) for completion in 
+                self._completer(self._completion_context, stem)]
 
     def clear_error(self):
         self.msg = ""
@@ -154,5 +167,6 @@ class Reader(pyrepl.historical_reader.HistoricalReader,
         self.dirty = 1
 
 
-def make_reader(get_prompt, completer):
-    return Reader(get_prompt, completer, pyrepl.unix_console.UnixConsole())
+def make_reader(get_prompt, completer, cwd):
+    return Reader(get_prompt, completer, cwd, 
+                  pyrepl.unix_console.UnixConsole())
