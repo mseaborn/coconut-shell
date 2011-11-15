@@ -374,6 +374,30 @@ class ShellTests(TestCase):
         sh.run_command("printenv FOO123", {1: write_stdout, 2: sys.stderr})
         self.assertEquals(read_stdout.read(), "bar1234\n")
 
+    def test_brace_expansion(self):
+        self.assertEquals(self.command_output("echo {a,b}"), "a b\n")
+        self.assertEquals(self.command_output("echo {a,b,c}"), "a b c\n")
+        self.assertEquals(self.command_output("echo {a,b}{c,d}"), 
+                          "ac ad bc bd\n")
+        self.assertEquals(self.command_output("echo {a{c,d},b}"), "ac ad b\n")
+        self.assertEquals(self.command_output("echo a{b,c}d"), "abd acd\n")
+        self.assertEquals(self.command_output("echo {a..c}"), "a b c\n")
+        self.assertEquals(self.command_output("echo {c..a}"), "c b a\n")
+        self.assertEquals(self.command_output("echo {1..3}"), "1 2 3\n")
+        self.assertEquals(self.command_output("echo {-1..1}"), "-1 0 1\n")
+        self.assertEquals(self.command_output("echo {3..1}"), "3 2 1\n")
+        self.assertEquals(self.command_output("echo {a..c,d}"), "a..c d\n")
+        self.assertEquals(self.command_output("echo {a..a}"), "a\n")
+        self.assertEquals(self.command_output("echo {a..b}{c..e}"), 
+                          "ac ad ae bc bd be\n")
+        # These tests aren't passing yet. Nice to have.
+        # self.assertEquals(self.command_output('echo a{"b c",d}'), 
+        #                   "ab c ad\n")
+        # self.assertEquals(self.command_output('echo "a b"{"c d",e}'), 
+        #                   "a bc d a be\n")
+        # self.assertEquals(self.command_output("echo {a}"), "{a}\n")
+        # self.assertEquals(self.command_output("echo {a b}"), "{a b}\n")
+
 
 class FDRedirectionTests(tempdir_test.TempDirTestCase):
 

@@ -34,6 +34,7 @@ import traceback
 import gobject
 import pyparsing as parse
 
+import brace_expansion
 import jobcontrol
 
 
@@ -102,7 +103,18 @@ def copy_spec(spec):
 class CommandExp(object):
 
     def __init__(self, args):
-        self._args = args
+        self._args = self._expand_braced_args(args)
+
+    def _expand_braced_args(self, args):
+        arguments = []
+        for arg in args:
+            if isinstance(arg, (StringArgument, ExpandStringArgument)):
+                expanded_args = brace_expansion.expand_braces(arg._string)
+                arguments.extend([arg.__class__(part) 
+                                  for part in expanded_args])
+            else:
+                arguments.append(arg)
+        return arguments
 
     def run(self, launcher, job, spec):
         spec = copy_spec(spec)
