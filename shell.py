@@ -94,9 +94,21 @@ class RedirectFile(object):
             spec["cwd"].relative_op(lambda: open(filename, self._mode))
 
 
+class AssignmentExp(object):
+
+    def __init__(self, variable, value):
+        self._variable = variable
+        self._value = value
+
+    def eval(self, spec):
+        spec["environ"][self._variable] = self._value
+
+
 def copy_spec(spec):
     spec = spec.copy()
     spec["fds"] = spec["fds"].copy()
+    if "environ" in spec:
+        spec["environ"] = spec["environ"].copy()
     return spec
 
 
@@ -193,7 +205,16 @@ redirect_file = (redirect_lhs + parse.Word(bare_chars)) \
 argument = redirect_fd | redirect_file | bare_argument | \
     single_quoted_argument | double_quoted_argument
 
-command = (argument + parse.ZeroOrMore(argument)) \
+variable_name = parse.Word(parse.alphanums + "_")
+
+variable_value = parse.Word(bare_chars) | \
+    parse.QuotedString(quoteChar='"', escChar='\\', multiline=True)
+
+assignment = (variable_name + "=" + variable_value)\
+    .setParseAction(lambda text, loc, args: AssignmentExp(args[0], args[2]))
+
+command = (parse.ZeroOrMore(assignment) + argument + 
+           parse.ZeroOrMore(argument)) \
           .setParseAction(lambda text, loc, args: CommandExp(args))
 
 pipeline = parse.delimitedList(command, delim='|') \

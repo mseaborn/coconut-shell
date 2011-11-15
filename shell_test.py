@@ -398,6 +398,17 @@ class ShellTests(TestCase):
         # self.assertEquals(self.command_output("echo {a}"), "{a}\n")
         # self.assertEquals(self.command_output("echo {a b}"), "{a b}\n")
 
+    def test_setting_environment_variable(self):
+        def test(settings, expected):
+            output = self.command_output('%s env | grep "^TEST"' % settings)
+            self.assertEquals(output, "%s\n" % expected)
+        test("TEST=foo", "TEST=foo")
+        test("TEST2=foo", "TEST2=foo")
+        test('TEST="foo baz"', "TEST=foo baz")
+        test("TEST_A=foo", "TEST_A=foo")
+        test("TEST=foo#", "TEST=foo#")
+        test("TEST=foo TESTER=bar", "TESTER=bar\nTEST=foo")
+
 
 class FDRedirectionTests(tempdir_test.TempDirTestCase):
 

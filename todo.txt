@@ -5,7 +5,6 @@
 - $-variable expansion (do we want this?)
 - symlink-aware cwd with "cd .."
 - "help" command
-- setting environment variables via "foo=bar command"
 
 Done:
 - pipelines
@@ -23,3 +22,4 @@ Done:
   - but not configurable
 - save history
 - {a,b} expansion, a kind of globbing
+- setting environment variables via "foo=bar command"
