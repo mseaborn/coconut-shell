@@ -376,6 +376,7 @@ class ShellTests(TestCase):
 
     def test_brace_expansion(self):
         self.assertEquals(self.command_output("echo {a,b}"), "a b\n")
+        self.assertEquals(self.command_output("echo a{b,}"), "ab a\n")
         self.assertEquals(self.command_output("echo {a,b,c}"), "a b c\n")
         self.assertEquals(self.command_output("echo {a,b}{c,d}"), 
                           "ac ad bc bd\n")
@@ -386,7 +387,6 @@ class ShellTests(TestCase):
         self.assertEquals(self.command_output("echo {1..3}"), "1 2 3\n")
         self.assertEquals(self.command_output("echo {-1..1}"), "-1 0 1\n")
         self.assertEquals(self.command_output("echo {3..1}"), "3 2 1\n")
-        self.assertEquals(self.command_output("echo {a..c,d}"), "a..c d\n")
         self.assertEquals(self.command_output("echo {a..a}"), "a\n")
         self.assertEquals(self.command_output("echo {a..b}{c..e}"), 
                           "ac ad ae bc bd be\n")
@@ -395,8 +395,6 @@ class ShellTests(TestCase):
         #                   "ab c ad\n")
         # self.assertEquals(self.command_output('echo "a b"{"c d",e}'), 
         #                   "a bc d a be\n")
-        # self.assertEquals(self.command_output("echo {a}"), "{a}\n")
-        # self.assertEquals(self.command_output("echo {a b}"), "{a b}\n")
 
     def test_setting_environment_variable(self):
         def test(settings, expected):

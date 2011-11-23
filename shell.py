@@ -120,12 +120,15 @@ class CommandExp(object):
     def _expand_braced_args(self, args):
         arguments = []
         for arg in args:
-            if isinstance(arg, (StringArgument, ExpandStringArgument)):
-                expanded_args = brace_expansion.expand_braces(arg._string)
-                arguments.extend([arg.__class__(part) 
-                                  for part in expanded_args])
-            else:
-                arguments.append(arg)
+            if isinstance(arg, (ExpandStringArgument, StringArgument)):
+                try:
+                    expanded_args = brace_expansion.expand_braces(arg._string)
+                    arguments.extend([arg.__class__(part) 
+                                      for part in expanded_args])
+                    continue
+                except parse.ParseException:
+                    pass
+            arguments.append(arg)
         return arguments
 
     def run(self, launcher, job, spec):
