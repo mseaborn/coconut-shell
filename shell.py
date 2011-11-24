@@ -430,9 +430,10 @@ class LogicalCwd(object):
             new_cwd = os.path.join(self.get_cwd(), path)
         # Note that ".." is applied after symlink expansion.  We don't
         # attempt to follow Bash's behaviour here.
-        self._cwd_tracker.chdir(path)
+        normal_path = os.path.normpath(new_cwd)
+        self._cwd_tracker.chdir(normal_path)
         # Only set this if chdir() succeeds.
-        self._environ["PWD"] = os.path.normpath(new_cwd)
+        self._environ["PWD"] = normal_path
 
     def get_cwd(self):
         path = self._environ.get("PWD")

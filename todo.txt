@@ -2,7 +2,6 @@
 - nicer errors (from parser and for "command not found")
 - report non-zero status codes
 - $-variable expansion (do we want this?)
-- symlink-aware cwd with "cd .."
 - "help" command
 
 Done:
@@ -23,3 +22,4 @@ Done:
 - {a,b} expansion, a kind of globbing
 - setting environment variables via "foo=bar command"
 - within-argument quotes, e.g. --foo="bar"
+- symlink-aware cwd with "cd .."

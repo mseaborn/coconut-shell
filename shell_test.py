@@ -248,6 +248,20 @@ class ShellTests(TestCase):
         cwd_tracker.chdir("..")
         self.assertEquals(cwd_tracker.get_cwd(), dir_path1)
 
+    def test_chdir_to_parent_with_symlinks(self):
+        cwd_tracker = make_shell().cwd
+        dir_path1 = self.make_temp_dir()
+        dir_path2 = os.path.join(dir_path1, "dir2")
+        os.mkdir(dir_path2)
+        dir_path3 = os.path.join(dir_path2, "dir3")
+        os.mkdir(dir_path3)
+        symlink_path = os.path.join(dir_path1, "symlink")
+        os.symlink(dir_path3, symlink_path)
+        cwd_tracker.chdir(symlink_path + "/")
+        self.assertEquals(cwd_tracker.get_cwd(), symlink_path)
+        cwd_tracker.chdir("..")
+        self.assertEquals(cwd_tracker.get_cwd(), os.path.dirname(symlink_path))
+
     def test_get_prompt_in_deleted_directory(self):
         temp_dir = self.make_temp_dir()
         path = os.path.join(temp_dir, "dir2")
