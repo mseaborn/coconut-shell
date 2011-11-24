@@ -396,6 +396,22 @@ class ShellTests(TestCase):
         # self.assertEquals(self.command_output('echo "a b"{"c d",e}'), 
         #                   "a bc d a be\n")
 
+    def test_quotes_inside_argument(self):
+        self.assertEquals(self.command_output('echo foo"bar"'), 
+                          "foobar\n")
+        self.assertEquals(self.command_output('echo "foo""bar"'), 
+                          "foobar\n")
+        self.assertEquals(self.command_output('echo "foo"\'bar\''), 
+                          "foobar\n")
+        self.assertEquals(self.command_output('echo "f"o"o""b"a"r"'), 
+                          "foobar\n")
+
+    def test_quotes_inside_argument_with_tilde_expansion(self):
+        home_dir = "/my/home/town"
+        self.patch_env_var("HOME", home_dir)
+        output = self.command_output('echo ~/"foo"')
+        self.assertEquals(output, home_dir + "/foo\n")
+
     def test_setting_environment_variable(self):
         def test(settings, expected):
             output = self.command_output('%s env | grep "^TEST"' % settings)

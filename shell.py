@@ -183,6 +183,12 @@ bare_chars = "".join(sorted(set(parse.srange("[a-zA-Z0-9]") +
 bare_argument = parse.Word(bare_chars) \
     .setParseAction(lambda text, loc, arg: ExpandStringArgument(get_one(arg)))
 
+compound_argument = (parse.OneOrMore(
+        single_quoted_argument | double_quoted_argument | bare_argument)
+                     .leaveWhitespace().setParseAction(
+        lambda text, loc, args: ExpandStringArgument(
+            "".join(arg._string for arg in args))))
+
 fd_number = parse.Word(parse.srange("[0-9]")) \
     .setParseAction(lambda text, loc, args: int(get_one(args)))
 
@@ -205,7 +211,7 @@ redirect_file = (redirect_lhs + parse.Word(bare_chars)) \
     .setParseAction(lambda text, loc, args: RedirectFile(args[0][0],
                                                          args[0][1], args[1]))
 
-argument = redirect_fd | redirect_file | bare_argument | \
+argument = redirect_fd | redirect_file | bare_argument ^ compound_argument |\
     single_quoted_argument | double_quoted_argument
 
 variable_name = parse.Word(parse.alphanums + "_")
@@ -217,6 +223,7 @@ assignment = (variable_name + "=" + variable_value)\
     .setParseAction(lambda text, loc, args: AssignmentExp(args[0], args[2]))
 
 command = (parse.ZeroOrMore(assignment) + argument + 
+           parse.Optional(parse.White()).suppress() +
            parse.ZeroOrMore(argument)) \
           .setParseAction(lambda text, loc, args: CommandExp(args))
 
