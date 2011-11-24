@@ -100,13 +100,13 @@ class TestCase(tempdir_test.TempDirTestCase):
 
 class ShellTests(TestCase):
 
-    def command_output(self, command):
+    def command_output(self, command, expected_stderr=""):
         write_stdout, read_stdout = make_fh_pair()
         write_stderr, read_stderr = make_fh_pair()
         run_command(command,
                     std_fds(stdin=open(os.devnull, "r"),
                             stdout=write_stdout, stderr=write_stderr))
-        self.assertEquals(read_stderr.read(), "")
+        self.assertEquals(read_stderr.read(), expected_stderr)
         return read_stdout.read()
 
     def test_simple(self):
@@ -261,6 +261,15 @@ class ShellTests(TestCase):
         self.assertEquals(cwd_tracker.get_cwd(), symlink_path)
         cwd_tracker.chdir("..")
         self.assertEquals(cwd_tracker.get_cwd(), os.path.dirname(symlink_path))
+
+    def test_chdir_to_non_existant_directory(self):
+        cwd_tracker = make_shell().cwd
+        dir_path1 = self.make_temp_dir()
+        dir_path2 = os.path.join(dir_path1, "dir2")
+        self.command_output(
+            'cd %s' % dir_path2, 
+            expected_stderr="coconut: cd: %s: No such file or directory\n"
+            % dir_path2)
 
     def test_get_prompt_in_deleted_directory(self):
         temp_dir = self.make_temp_dir()

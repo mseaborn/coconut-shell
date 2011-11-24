@@ -271,7 +271,13 @@ def make_chdir_builtin(cwd_tracker, environ):
             cwd_tracker.chdir(environ["HOME"])
         else:
             for arg in args:
-                cwd_tracker.chdir(arg)
+                try:
+                    cwd_tracker.chdir(arg)
+                except OSError:
+                    error_msg = ("coconut: cd: %s: No such file or directory\n"
+                                 % arg)
+                    spec["fds"][FILENO_STDERR].write(error_msg)
+                    break
     return chdir_builtin
 
 
