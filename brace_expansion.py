@@ -39,12 +39,9 @@ class IntegerRange(object):
         self.start, elipsis, self.end = args
 
     def __iter__(self):
-        if self.end > self.start:
-            return (str(num) for num in 
-                    range(int(self.start), int(self.end) + 1))
-        else:
-            return (str(num) for num in 
-                    range(int(self.start), int(self.end) - 1, -1))
+        direction = 1 if self.end > self.start else -1
+        return (str(num) for num in 
+                range(int(self.start), int(self.end) + direction, direction))
 
 
 class CharacterRange(object):
@@ -53,12 +50,9 @@ class CharacterRange(object):
         self.start, elipsis, self.end = args
 
     def __iter__(self):
-        if self.end > self.start:
-            return (chr(code) for code in 
-                    range(ord(self.start), ord(self.end) + 1))
-        else:
-            return (chr(code) for code in 
-                    range(ord(self.start), ord(self.end) - 1, -1))
+        direction = 1 if self.end > self.start else -1
+        return (chr(code) for code in 
+                range(ord(self.start), ord(self.end) + direction, direction))
 
 
 class MiddlePart(object):
